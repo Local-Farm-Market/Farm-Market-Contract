@@ -3,23 +3,23 @@
 
     import "@openzeppelin/contracts/access/Ownable.sol";
     import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-    import "@openzeppelin/contracts/security/Pausable.sol";
+    import "@openzeppelin/contracts/utils/Pausable.sol";
 
     contract Farm is Ownable, ReentrancyGuard, Pausable {
 
         // Structs 
-        struct UserProfile {
-            string name;
-            string contactInfo;
-            string location;
-            string bio;
-            bool isVerified;
-            uint256 rating;
-            uint256 reviewCount;
-            string[] certifications;
-            uint256 createdAt;
-            bool isSeller;
-        }
+            struct UserProfile {
+                string name;
+                string contactInfo;
+                string location;
+                string bio;
+                bool isVerified;
+                uint256 rating;
+                uint256 reviewCount;
+                string[] certifications;
+                uint256 createdAt;
+                bool isSeller;
+            }
 
         struct Product {
             uint256 id;
@@ -51,8 +51,8 @@
             uint256 id;
             address buyer;
             address seller;
-            uint256 productId;
-            uint256 quantity;
+            uint256[] productIds;
+            uint256[] quantities;
             uint256 totalPrice;
             uint256 shippingFee;
             OrderStatus status;
@@ -75,15 +75,25 @@
             uint256 timestamp;
         }
 
+        struct Dispute {
+            uint256 orderId;
+            address initiator;
+            string reason;
+            bool resolved;
+            DisputeResolution resolution;
+            uint256 createdAt;
+            uint256 resolvedAt;
+        }
+
         //Enums
         enum OrderStatus {
             NEW,
-            PAID,
+            PAYMENT_ESCROWED,
             PROCESSING,
-            SHIPPED,
+            IN_DELIVERY,
             DELIVERED,
-            CANCELLED,
             COMPLETED,
+            CANCELLED,
             DISPUTED
         }
 
@@ -197,7 +207,7 @@
         }
 
         // User Profile Functions
-        function createUserProfile(string memory name, string memory contactInfo, string memory location, string memory bio, bool isSeller, string memory certifications, ) external {
+        function createUserProfile(string memory name, string memory contactInfo, string memory location, string memory bio, bool isSeller, string[] memory certifications ) external {
             require(bytes(name).length > 0, "Name cannot be empty");
 
             UserProfile storage profile = userProfiles[msg.sender];
@@ -214,7 +224,8 @@
 
             emit UserProfileCreated(msg.sender, name, isSeller);
         }
-        // Function to update user profile 
+
+        //++++++++++++ Function to update user profile ++++++++++++//
         function updateUserProfile(string memory name, string memory contactInfo, string memory location, string memory bio, string[] memory certifications) external {
             require(bytes(userProfiles[msg.sender].name).length > 0, "Profile does not exist");
 
@@ -228,7 +239,7 @@
             emit UserProfileUpdated(msg.sender);
         }
 
-        //Function to toggle seller status 
+        //++++++++++++ Function to toggle seller status ++++++++++++//
         function toggleSellerStatus() external {
             require(bytes(userProfiles[msg.sender].name).length > 0, "Profile does not exist");
             
@@ -268,8 +279,8 @@
                 imageUrls: imageUrls,
                 isAvailable: true,
                 isOrganic: isOrganic,
-                harvestDate: harvestDate 
-                createdAt: block.timestamp
+                harvestDate: harvestDate, 
+                createdAt: block.timestamp,
                 soldCount: 0,
                 nutritionFacts: nutritionFacts
             });
@@ -330,7 +341,7 @@
             emit ProductUpdated(productId);
         }
 
-        //Function to delete prooduct
+        //Function to delete product
         function deleteProduct(uint256 productId) external onlySeller productExists(productId) whenNotPaused{
             require(products[productId].seller == msg.sender, "Only seller can delete");
 
@@ -359,7 +370,7 @@
             emit ProductDeleted(productId);
         }
 
-        // Function to update product stock
+        //++++++++++++ Function to update product stock +++++++++++++//
         function updateProductStock(uint256 productId, uint256 newStockQuantity) external onlySeller productExists(productId) whenNotPaused {
             require(products[productId].seller == msg.sender, "Only seller can update");
             
@@ -373,7 +384,7 @@
             emit ProductUpdated(productId);
         }
 
-        // Function to toggle product availability 
+        //++++++++++++ Function to toggle product availability ++++++++++++//
         function toggleProductAvailability(uint256 productId) external onlySeller productExists(productId) whenNotPaused {
             require(products[productId].seller == msg.sender, "Only seller can update");
             
@@ -383,49 +394,142 @@
         }
 
         // Order Management Functions
-        function createOrder(uint256 productId, uint256 quantity) external payable {
-            Product storage product = products[productId];
-            require(product.isAvailable, "Product not available");
-            require(product.stockQuantity >= quantity, "Insufficient stock");
-            require(msg.value == product.price * quantity, "Incorrect payment");
+        function createOrder(uint256[] memory productIds, uint256[] memory quantities, string memory shippingAddress) external payable whenNotPaused{
+            require(productIds.length > 0, "No products specified");
+            require(productIds.length == quantities.length, "Product and quantity arrays must match");
+            require(bytes(shippingAddress).length > 0, "Shipping address required");
+            
+            uint256 totalAmount = STANDARD_SHIPPING_FEE; // Start with shipping fee
+            address seller;
+            
+            // Verify all products have the same seller and calculate total price
+            for (uint256 i = 0; i < productIds.length; i++) {
+                uint256 productId = productIds[i];
+                uint256 quantity = quantities[i];
+                
+                require(products[productId].id == productId, "Product does not exist");
+                require(products[productId].isAvailable, "Product not available");
+                require(products[productId].stockQuantity >= quantity, "Insufficient stock");
+                
+                if (i == 0) {
+                    seller = products[productId].seller;
+                } else {
+                    require(products[productId].seller == seller, "All products must be from the same seller");
+                }
+                
+                totalAmount += products[productId].price * quantity;
+            }
+            
+            require(msg.value == totalAmount, "Incorrect payment amount");
+            // Product storage product = products[productId];
+            // require(product.isAvailable, "Product not available");
+            // require(product.stockQuantity >= quantity, "Insufficient stock");
+            // require(msg.value == product.price * quantity, "Incorrect payment");
 
             uint256 newOrderId = _incrementOrderId();
 
             // Calculate fees
             uint256 developerFee = (msg.value * DEVELOPER_FEE_PERCENT) / 100;
-            uint256 sellerAmount = msg.value - developerFee;
+            uint256 sellerAmount = msg.value - developerFee - STANDARD_SHIPPING_FEE;
 
             orders[newOrderId] = Order({
                 id: newOrderId,
                 buyer: msg.sender,
-                seller: product.seller,
-                productId: productId,
-                quantity: quantity,
-                totalPrice: msg.value,
-                status: OrderStatus.NEW,
+                seller: seller,
+                productIds: productIds,
+                quantities: quantities,
+                totalPrice: totalAmount,
+                shippingFee: STANDARD_SHIPPING_FEE,
+                status: OrderStatus.PAYMENT_ESCROWED,
+                shippingAddress: shippingAddress,
+                trackingInfo: "",
                 createdAt: block.timestamp,
-                updatedAt: block.timestamp
+                updatedAt: block.timestamp,
+                isDisputed: false,
+                disputeReason: ""
             });
 
-            // Update product stock
-            product.stockQuantity -= quantity;
+            // Update product stock and sold count
+            for (uint256 i = 0; i < productIds.length; i++) {
+                uint256 productId = productIds[i];
+                uint256 quantity = quantities[i];
+                
+                products[productId].stockQuantity -= quantity;
+                products[productId].soldCount += quantity;
+                
+                // If stock is 0, set availability to false
+                if (products[productId].stockQuantity == 0) {
+                    products[productId].isAvailable = false;
+                }
+            }
 
             // Track orders for buyer and seller
             buyerOrders[msg.sender].push(newOrderId);
+            sellerOrders[seller].push(newOrderId);
 
             // Add to seller's pending balance
-            pendingWithdrawals[product.seller] += sellerAmount;
+            pendingWithdrawals[seller] += sellerAmount;
 
             // Track developer fee
             pendingWithdrawals[_developerWallet] += developerFee;
 
-            emit OrderCreated(newOrderId, msg.sender, product.seller);
+            // Update platform stats
+            _platformTotalVolume += totalAmount;
+            _platformTotalOrders++;
+
+            emit OrderCreated(newOrderId, msg.sender, seller);
         }
 
         // Remaining functions are identical to the original contract
-        function updateOrderStatus(uint256 orderId, OrderStatus newStatus) external {
+        function updateOrderStatus(uint256 orderId, OrderStatus newStatus) external orderExists(orderId) onlyOrderParticipant(orderId) whenNotPaused {
             Order storage order = orders[orderId];
-            require(msg.sender == order.seller || msg.sender == order.buyer, "Unauthorized");
+            require(!order.isDisputed, "Cannot update disputed order");
+            // require(msg.sender == order.seller || msg.sender == order.buyer, "Unauthorized");
+
+            // Validate status transitions
+            if (msg.sender == order.seller) {
+                require(
+                    (order.status == OrderStatus.PAYMENT_ESCROWED && newStatus == OrderStatus.PROCESSING) ||
+                    (order.status == OrderStatus.PROCESSING && newStatus == OrderStatus.IN_DELIVERY) ||
+                    (order.status == OrderStatus.IN_DELIVERY && newStatus == OrderStatus.DELIVERED),
+                    "Invalid status transition for seller"
+                );
+            } else if (msg.sender == order.buyer) {
+                require(
+                    (order.status == OrderStatus.DELIVERED && newStatus == OrderStatus.COMPLETED) ||
+                    (order.status == OrderStatus.PAYMENT_ESCROWED && newStatus == OrderStatus.CANCELLED),
+                    "Invalid status transition for buyer"
+                );
+                
+                // If buyer confirms completion, release funds to seller
+                if (newStatus == OrderStatus.COMPLETED) {
+                    // Funds are already in pendingWithdrawals from createOrder
+                    emit PaymentReleased(orderId, order.totalPrice);
+                }
+                
+                // If buyer cancels, refund them
+                if (newStatus == OrderStatus.CANCELLED) {
+                    // Calculate refund amount (excluding developer fee which is kept)
+                    uint256 refundAmount = order.totalPrice - (order.totalPrice * DEVELOPER_FEE_PERCENT / 100);
+                    
+                    // Remove from seller's pending withdrawals
+                    pendingWithdrawals[order.seller] -= (refundAmount - STANDARD_SHIPPING_FEE);
+                    
+                    // Add back to product stock
+                    for (uint256 i = 0; i < order.productIds.length; i++) {
+                        uint256 productId = order.productIds[i];
+                        uint256 quantity = order.quantities[i];
+                        
+                        products[productId].stockQuantity += quantity;
+                        products[productId].soldCount -= quantity;
+                        products[productId].isAvailable = true;
+                    }
+                    
+                    // Refund buyer
+                    (bool success, ) = payable(order.buyer).call{value: refundAmount}("");
+                    require(success, "Refund failed");
+                }
+            }
 
             order.status = newStatus;
             order.updatedAt = block.timestamp;
@@ -433,7 +537,126 @@
             emit OrderStatusUpdated(orderId, newStatus);
         }
 
-        function withdrawSellerFunds() external nonReentrant {
+        //++++++++++++ Function to add tracking information ++++++++++++//
+        function addTrackingInfo(uint256 orderId, string memory trackingInfo) 
+            external 
+            orderExists(orderId) 
+            whenNotPaused 
+        {
+            Order storage order = orders[orderId];
+            require(msg.sender == order.seller, "Only seller can add tracking info");
+            require(order.status == OrderStatus.PROCESSING || order.status == OrderStatus.IN_DELIVERY, "Order not in processing or delivery");
+            
+            order.trackingInfo = trackingInfo;
+            order.updatedAt = block.timestamp;
+            
+            emit OrderStatusUpdated(orderId, order.status);
+        }
+
+        //++++++++++++ Function to create dispute ++++++++++++//
+        function createDispute(uint256 orderId, string memory reason) 
+            external 
+            orderExists(orderId) 
+            whenNotPaused 
+        {
+            Order storage order = orders[orderId];
+            require(msg.sender == order.buyer, "Only buyer can create dispute");
+            require(!order.isDisputed, "Dispute already exists");
+            require(
+                order.status == OrderStatus.PAYMENT_ESCROWED || 
+                order.status == OrderStatus.PROCESSING || 
+                order.status == OrderStatus.IN_DELIVERY || 
+                order.status == OrderStatus.DELIVERED,
+                "Cannot dispute order in current status"
+            );
+            
+            order.isDisputed = true;
+            order.disputeReason = reason;
+            order.status = OrderStatus.DISPUTED;
+            order.updatedAt = block.timestamp;
+            
+            uint256 disputeId = _incrementDisputeId();
+            
+            disputes[disputeId] = Dispute({
+                orderId: orderId,
+                initiator: msg.sender,
+                reason: reason,
+                resolved: false,
+                resolution: DisputeResolution.NONE,
+                createdAt: block.timestamp,
+                resolvedAt: 0
+            });
+            
+            emit DisputeCreated(orderId, msg.sender);
+            emit OrderStatusUpdated(orderId, OrderStatus.DISPUTED);
+        }
+
+        //++++++++++++ Function to resolve dispute ++++++++++++//
+        function resolveDispute(uint256 orderId, DisputeResolution resolution) 
+            external 
+            onlyOwner 
+            orderExists(orderId) 
+            whenNotPaused 
+        {
+            Order storage order = orders[orderId];
+            require(order.isDisputed, "No dispute exists");
+            require(order.status == OrderStatus.DISPUTED, "Order not in disputed status");
+            
+            // Find the dispute
+            uint256 disputeId = 0;
+            for (uint256 i = 1; i <= _disputeIds; i++) {
+                if (disputes[i].orderId == orderId && !disputes[i].resolved) {
+                    disputeId = i;
+                    break;
+                }
+            }
+            
+            require(disputeId > 0, "Dispute not found");
+            
+            Dispute storage dispute = disputes[disputeId];
+            
+            if (resolution == DisputeResolution.REFUND_BUYER) {
+                // Calculate refund amount (excluding developer fee which is kept)
+                uint256 refundAmount = order.totalPrice - (order.totalPrice * DEVELOPER_FEE_PERCENT / 100);
+                
+                // Remove from seller's pending withdrawals
+                pendingWithdrawals[order.seller] -= (refundAmount - STANDARD_SHIPPING_FEE);
+                
+                // Refund buyer
+                (bool success, ) = payable(order.buyer).call{value: refundAmount}("");
+                require(success, "Refund failed");
+                
+                order.status = OrderStatus.CANCELLED;
+            } 
+            else if (resolution == DisputeResolution.RELEASE_TO_SELLER) {
+                // Funds are already in pendingWithdrawals from createOrder
+                order.status = OrderStatus.COMPLETED;
+            }
+            else if (resolution == DisputeResolution.PARTIAL_REFUND) {
+                // Calculate partial refund (50%)
+                uint256 refundAmount = (order.totalPrice - STANDARD_SHIPPING_FEE) / 2;
+                
+                // Adjust seller's pending withdrawals
+                pendingWithdrawals[order.seller] -= refundAmount;
+                
+                // Refund buyer
+                (bool success, ) = payable(order.buyer).call{value: refundAmount}("");
+                require(success, "Partial refund failed");
+                
+                order.status = OrderStatus.COMPLETED;
+            }
+            
+            dispute.resolved = true;
+            dispute.resolution = resolution;
+            dispute.resolvedAt = block.timestamp;
+            
+            order.updatedAt = block.timestamp;
+            
+            emit DisputeResolved(orderId, resolution);
+            emit OrderStatusUpdated(orderId, order.status);
+        }
+
+        function withdrawSellerFunds() external nonReentrant whenNotPaused {
             uint256 amount = pendingWithdrawals[msg.sender];
             require(amount > 0, "No funds to withdraw");
 
@@ -444,6 +667,113 @@
             require(success, "Transfer failed");
 
             emit WithdrawalMade(msg.sender, amount);
+        }
+
+        //++++++++++++ Function to submit review ++++++++++++//
+        function submitReview(
+            address reviewee,
+            uint256 productId,
+            uint256 orderId,
+            uint256 rating,
+            string memory comment
+        ) external whenNotPaused {
+            require(rating >= 1 && rating <= 5, "Rating must be between 1 and 5");
+            
+            // If reviewing a product, verify the reviewer bought it
+            if (productId > 0) {
+                bool hasBought = false;
+                uint256[] memory buyerOrdersList = buyerOrders[msg.sender];
+                
+                for (uint256 i = 0; i < buyerOrdersList.length; i++) {
+                    Order storage order = orders[buyerOrdersList[i]];
+                    if (order.status == OrderStatus.COMPLETED) {
+                        for (uint256 j = 0; j < order.productIds.length; j++) {
+                            if (order.productIds[j] == productId) {
+                                hasBought = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (hasBought) break;
+                }
+                
+                require(hasBought, "You must purchase the product before reviewing");
+            }
+            
+            // If reviewing an order, verify the reviewer is part of the order
+            if (orderId > 0) {
+                require(
+                    orders[orderId].buyer == msg.sender || orders[orderId].seller == msg.sender,
+                    "You must be part of the order to review it"
+                );
+                require(orders[orderId].status == OrderStatus.COMPLETED, "Order must be completed to review");
+            }
+            
+            uint256 reviewId = _incrementReviewId();
+            
+            Review memory newReview = Review({
+                id: reviewId,
+                reviewer: msg.sender,
+                reviewee: reviewee,
+                productId: productId,
+                orderId: orderId,
+                rating: rating,
+                comment: comment,
+                timestamp: block.timestamp
+            });
+            
+            // Store review in appropriate mappings
+            if (productId > 0) {
+                productReviews[productId].push(newReview);
+                
+                // Update product seller's rating
+                address seller = products[productId].seller;
+                UserProfile storage sellerProfile = userProfiles[seller];
+                
+                uint256 totalRating = sellerProfile.rating * sellerProfile.reviewCount;
+                totalRating += rating;
+                sellerProfile.reviewCount++;
+                sellerProfile.rating = totalRating / sellerProfile.reviewCount;
+            }
+            
+            if (reviewee != address(0)) {
+                userReviews[reviewee].push(newReview);
+                
+                // Update reviewee's rating if they're not being reviewed as a product seller
+                if (productId == 0) {
+                    UserProfile storage revieweeProfile = userProfiles[reviewee];
+                    
+                    uint256 totalRating = revieweeProfile.rating * revieweeProfile.reviewCount;
+                    totalRating += rating;
+                    revieweeProfile.reviewCount++;
+                    revieweeProfile.rating = totalRating / revieweeProfile.reviewCount;
+                }
+            }
+            
+            emit ReviewSubmitted(reviewId, msg.sender, reviewee);
+        }
+
+        // ++++++++++++ Function to toggle favourite products ++++++++++++ //
+        function toggleFavoriteProduct(uint256 productId) external productExists(productId) whenNotPaused {
+            bool isFavorite = favoriteProducts[msg.sender][productId];
+            
+            if (isFavorite) {
+                // Remove from favorites
+                favoriteProducts[msg.sender][productId] = false;
+                
+                uint256[] storage favorites = userFavorites[msg.sender];
+                for (uint256 i = 0; i < favorites.length; i++) {
+                    if (favorites[i] == productId) {
+                        favorites[i] = favorites[favorites.length - 1];
+                        favorites.pop();
+                        break;
+                    }
+                }
+            } else {
+                // Add to favorites
+                favoriteProducts[msg.sender][productId] = true;
+                userFavorites[msg.sender].push(productId);
+            }
         }
 
         // Getter functions will need slight modifications to use _productIds and _orderIds
@@ -482,6 +812,40 @@
             return availableProducts;
         }
 
+        //++++++++++++ Function to get products by category ++++++++++++//
+        function getProductsByCategory(string memory category) external view returns (Product[] memory) {
+            uint256[] memory productIds = productsByCategory[category];
+            Product[] memory categoryProducts = new Product[](productIds.length);
+            
+            for (uint256 i = 0; i < productIds.length; i++) {
+                categoryProducts[i] = products[productIds[i]];
+            }
+            
+            return categoryProducts;
+        }
+
+        // +++++++++++++ Function to get user favorites ++++++++++++//
+        function getUserFavorites(address user) external view returns (Product[] memory) {
+            uint256[] memory favoriteIds = userFavorites[user];
+            Product[] memory favoritesList = new Product[](favoriteIds.length);
+            
+            for (uint256 i = 0; i < favoriteIds.length; i++) {
+                favoritesList[i] = products[favoriteIds[i]];
+            }
+            
+            return favoritesList;
+        }
+
+        // +++++++++++++ Function to get user reviews ++++++++++++//
+        function getProductReviews(uint256 productId) external view returns (Review[] memory) {
+            return productReviews[productId];
+        }
+
+        // +++++++++++++ Function to get Product reviews ++++++++++++//
+        function getUserReviews(address user) external view returns (Review[] memory) {
+            return userReviews[user];
+        }
+
         function getBuyerOrders(address buyer) external view returns (Order[] memory) {
             uint256[] memory orderIds = buyerOrders[buyer];
             Order[] memory buyerOrderList = new Order[](orderIds.length);
@@ -493,6 +857,9 @@
             return buyerOrderList;
         }
 
+        // Statistics and Tracking Functions
+
+        //++++++++++++ Function to get sellers statistics ++++++++++++//    
         function getSellerStats(address seller)
             external
             view
@@ -515,6 +882,32 @@
             availableBalance = pendingWithdrawals[seller];
         }
 
+        //++++++++++++ Function to get buyer statistics ++++++++++++// 
+        function getBuyerStats(address buyer)
+            external
+            view
+            returns (uint256 totalOrders, uint256 totalSpent, uint256 availableBalance)
+        {
+            uint256 completedOrders = 0;
+            uint256 spent = 0;
+            
+            for (uint256 i = 1; i <= _orderIds; i++) {
+                if (orders[i].buyer == buyer && orders[i].status == OrderStatus.COMPLETED) {
+                    completedOrders++;
+                    spent += orders[i].totalPrice;
+                }
+            }
+            
+            totalOrders = completedOrders;
+            totalSpent = spent;
+            availableBalance = userBalances[buyer];
+        }
+
+        //++++++++++++ Function to get platform statistics ++++++++++++// 
+        function getPlatformStats() external view returns (uint256 totalVolume, uint256 totalOrders, uint256 totalProducts) {
+            return (_platformTotalVolume, _platformTotalOrders, _productIds);
+        }
+
         function getOrderCountByStatus(OrderStatus status) external view returns (uint256) {
             uint256 count = 0;
             for (uint256 i = 1; i <= _orderIds; i++) {
@@ -523,6 +916,30 @@
                 }
             }
             return count;
+        }
+
+        // Admin Functions 
+        
+        //++++++++++++ Function to pause contract ++++++++++++// 
+        function pause() external onlyOwner {
+            _pause();
+        }
+
+        //++++++++++++ Function to unpause contract ++++++++++++// 
+        function unpause() external onlyOwner {
+            _unpause();
+        }
+
+        //++++++++++++ Function to set developer wallet ++++++++++++//
+        function setDeveloperWallet(address newDeveloperWallet) external onlyOwner {
+            require(newDeveloperWallet != address(0), "Invalid address");
+            _developerWallet = newDeveloperWallet;
+        }
+
+        //++++++++++++ Function to verify user ++++++++++++//
+        function verifyUser(address user) external onlyOwner {
+            require(bytes(userProfiles[user].name).length > 0, "User profile does not exist");
+            userProfiles[user].isVerified = true;
         }
 
         // Fallback function to receive Ether
