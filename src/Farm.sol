@@ -3,9 +3,11 @@
 
     import "@openzeppelin/contracts/access/Ownable.sol";
     import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+    import "@openzeppelin/contracts/security/Pausable.sol";
 
-    contract Farm is Ownable, ReentrancyGuard {
-        // Structs remain the same as in the original contract
+    contract Farm is Ownable, ReentrancyGuard, Pausable {
+
+        // Structs 
         struct UserProfile {
             string name;
             string contactInfo;
@@ -73,6 +75,7 @@
             uint256 timestamp;
         }
 
+        //Enums
         enum OrderStatus {
             NEW,
             PAID,
@@ -194,24 +197,44 @@
         }
 
         // User Profile Functions
-        function createUserProfile(string memory name, string memory contactInfo, string memory location) external {
+        function createUserProfile(string memory name, string memory contactInfo, string memory location, string memory bio, bool isSeller, string memory certifications, ) external {
             require(bytes(name).length > 0, "Name cannot be empty");
 
             UserProfile storage profile = userProfiles[msg.sender];
             profile.name = name;
             profile.contactInfo = contactInfo;
             profile.location = location;
+            profile.bio = bio;
             profile.isVerified = false;
             profile.rating = 5; // Default rating
+            profile.reviewCount = 0;
+            profile.certifications = certifications;
+            profile.createdAt = block.timestamp;
+            profile.isSeller = isSeller;
 
-            emit UserProfileCreated(msg.sender, name);
+            emit UserProfileCreated(msg.sender, name, isSeller);
         }
+        // Function to update user profile 
+        function updateUserProfile(string memory name, string memory contactInfo, string memory location, string memory bio, string[] memory certifications) external {
+            require(bytes(userProfiles[msg.sender].name).length > 0, "Profile does not exist");
 
-        function updateUserProfile(string memory name, string memory contactInfo, string memory location) external {
             UserProfile storage profile = userProfiles[msg.sender];
             profile.name = name;
             profile.contactInfo = contactInfo;
             profile.location = location;
+            profile.bio = bio;
+            profile.certifications = certifications;
+
+            emit UserProfileUpdated(msg.sender);
+        }
+
+        //Function to toggle seller status 
+        function toggleSellerStatus() external {
+            require(bytes(userProfiles[msg.sender].name).length > 0, "Profile does not exist");
+            
+            userProfiles[msg.sender].isSeller = !userProfiles[msg.sender].isSeller;
+            
+            emit UserProfileUpdated(msg.sender);
         }
 
         // Product Management Functions
@@ -222,8 +245,15 @@
             uint256 stockQuantity,
             string memory unit,
             string memory description,
-            string[] memory imageUrls
-        ) external {
+            string[] memory imageUrls,
+            bool isOrganic,
+            string memory harvestDate,
+            NutritionFacts memory nutritionFacts
+        ) external onlySeller whenNotPaused{
+            require(bytes(name).length > 0, "Name cannot be empty");
+            require(price > 0, "Price must be greater than zero");
+            require(stockQuantity > 0, "Stock quantity must be greater than zero");
+
             uint256 newProductId = _incrementProductId();
 
             products[newProductId] = Product({
@@ -237,14 +267,20 @@
                 description: description,
                 imageUrls: imageUrls,
                 isAvailable: true,
+                isOrganic: isOrganic,
+                harvestDate: harvestDate 
                 createdAt: block.timestamp
+                soldCount: 0,
+                nutritionFacts: nutritionFacts
             });
 
             sellerProducts[msg.sender].push(newProductId);
+            productsByCategory[category].push(newProductId);
 
             emit ProductAdded(newProductId, msg.sender, name);
         }
 
+        // Function to update product
         function updateProduct(
             uint256 productId,
             string memory name,
@@ -254,11 +290,31 @@
             string memory unit,
             string memory description,
             string[] memory imageUrls,
-            bool isAvailable
-        ) external {
+            bool isAvailable,
+            bool isOrganic,
+            string memory harvestDate,
+            NutritionFacts memory nutritionFacts
+        ) external onlySeller productExists(productId) whenNotPaused{
             require(products[productId].seller == msg.sender, "Only seller can update");
 
             Product storage product = products[productId];
+
+            // If category changed, update the category mapping
+            if (keccak256(bytes(product.category)) != keccak256(bytes(category))) {
+                // Remove from old category
+                uint256[] storage oldCategoryProducts = productsByCategory[product.category];
+                for (uint256 i = 0; i < oldCategoryProducts.length; i++) {
+                    if (oldCategoryProducts[i] == productId) {
+                        oldCategoryProducts[i] = oldCategoryProducts[oldCategoryProducts.length - 1];
+                        oldCategoryProducts.pop();
+                        break;
+                    }
+                }
+                
+                // Add to new category
+                productsByCategory[category].push(productId);
+            }
+
             product.name = name;
             product.category = category;
             product.price = price;
@@ -267,13 +323,63 @@
             product.description = description;
             product.imageUrls = imageUrls;
             product.isAvailable = isAvailable;
+            product.isOrganic = isOrganic;
+            product.harvestDate = harvestDate;
+            product.nutritionFacts = nutritionFacts;
 
             emit ProductUpdated(productId);
         }
 
-        function deleteProduct(uint256 productId) external {
+        //Function to delete prooduct
+        function deleteProduct(uint256 productId) external onlySeller productExists(productId) whenNotPaused{
             require(products[productId].seller == msg.sender, "Only seller can delete");
+
+            // Remove from category mapping
+            uint256[] storage categoryProducts = productsByCategory[products[productId].category];
+            for (uint256 i = 0; i < categoryProducts.length; i++) {
+                if (categoryProducts[i] == productId) {
+                    categoryProducts[i] = categoryProducts[categoryProducts.length - 1];
+                    categoryProducts.pop();
+                    break;
+                }
+            }
+            
+            // Remove from seller products
+            uint256[] storage sellerProductsList = sellerProducts[msg.sender];
+            for (uint256 i = 0; i < sellerProductsList.length; i++) {
+                if (sellerProductsList[i] == productId) {
+                    sellerProductsList[i] = sellerProductsList[sellerProductsList.length - 1];
+                    sellerProductsList.pop();
+                    break;
+                }
+            }
+
             delete products[productId];
+
+            emit ProductDeleted(productId);
+        }
+
+        // Function to update product stock
+        function updateProductStock(uint256 productId, uint256 newStockQuantity) external onlySeller productExists(productId) whenNotPaused {
+            require(products[productId].seller == msg.sender, "Only seller can update");
+            
+            products[productId].stockQuantity = newStockQuantity;
+            
+            // If stock is 0, set availability to false
+            if (newStockQuantity == 0) {
+                products[productId].isAvailable = false;
+            }
+            
+            emit ProductUpdated(productId);
+        }
+
+        // Function to toggle product availability 
+        function toggleProductAvailability(uint256 productId) external onlySeller productExists(productId) whenNotPaused {
+            require(products[productId].seller == msg.sender, "Only seller can update");
+            
+            products[productId].isAvailable = !products[productId].isAvailable;
+            
+            emit ProductUpdated(productId);
         }
 
         // Order Management Functions
