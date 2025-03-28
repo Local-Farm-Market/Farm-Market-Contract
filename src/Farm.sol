@@ -656,7 +656,7 @@
             emit OrderStatusUpdated(orderId, order.status);
         }
 
-        function withdrawSellerFunds() external nonReentrant whenNotPaused {
+        function withdrawFunds() external nonReentrant whenNotPaused {
             uint256 amount = pendingWithdrawals[msg.sender];
             require(amount > 0, "No funds to withdraw");
 
@@ -753,7 +753,7 @@
             emit ReviewSubmitted(reviewId, msg.sender, reviewee);
         }
 
-        // ++++++++++++ Function to toggle favourite products ++++++++++++ //
+        // ++++++++++++ Function to toggle favorite products ++++++++++++ //
         function toggleFavoriteProduct(uint256 productId) external productExists(productId) whenNotPaused {
             bool isFavorite = favoriteProducts[msg.sender][productId];
             
@@ -824,7 +824,7 @@
             return categoryProducts;
         }
 
-        // +++++++++++++ Function to get user favorites ++++++++++++//
+        //+++++++++++++ Function to get user favorites ++++++++++++//
         function getUserFavorites(address user) external view returns (Product[] memory) {
             uint256[] memory favoriteIds = userFavorites[user];
             Product[] memory favoritesList = new Product[](favoriteIds.length);
@@ -836,16 +836,49 @@
             return favoritesList;
         }
 
-        // +++++++++++++ Function to get user reviews ++++++++++++//
+        //+++++++++++++ Function to get user certification ++++++++++++//
+        function getUserCertifications(address user) external view returns (string[] memory) {
+            return userProfiles[user].certifications;
+        }
+
+
+        //+++++++++++++ Function to get user reviews ++++++++++++//
         function getProductReviews(uint256 productId) external view returns (Review[] memory) {
             return productReviews[productId];
         }
 
-        // +++++++++++++ Function to get Product reviews ++++++++++++//
+        //+++++++++++++ Function to get Product reviews ++++++++++++//
         function getUserReviews(address user) external view returns (Review[] memory) {
             return userReviews[user];
         }
 
+        //+++++++++++++ Function to get user details +++++++++++++//
+        function getUserProfile(address user) external view returns (
+            string memory name,
+            string memory contactInfo,
+            string memory location,
+            string memory bio,
+            bool isVerified,
+            uint256 rating,
+            uint256 reviewCount,
+            string[] memory certifications,
+            uint256 createdAt,
+            bool isSeller
+        ) {
+            UserProfile storage profile = userProfiles[user];
+            return (
+                profile.name,
+                profile.contactInfo,
+                profile.location,
+                profile.bio,
+                profile.isVerified,
+                profile.rating,
+                profile.reviewCount,
+                profile.certifications,
+                profile.createdAt,
+                profile.isSeller
+            );
+        }
         function getBuyerOrders(address buyer) external view returns (Order[] memory) {
             uint256[] memory orderIds = buyerOrders[buyer];
             Order[] memory buyerOrderList = new Order[](orderIds.length);
