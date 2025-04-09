@@ -114,9 +114,6 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     event OrderStatusUpdated(uint256 indexed orderId, OrderStatus status);
     event PaymentReleased(uint256 indexed orderId, uint256 amount);
     event WithdrawalMade(address indexed seller, uint256 amount);
-    // event ReviewSubmitted(uint256 indexed reviewId, address indexed reviewer, address indexed reviewee);
-    // event DisputeCreated(uint256 indexed orderId, address indexed initiator);
-    // event DisputeResolved(uint256 indexed orderId, DisputeResolution resolution);
     event FundsDeposited(address indexed user, uint256 amount);
     event EscrowCreated(uint256 indexed orderId, uint256 amount, uint256 developerFee);
     event EscrowReleased(uint256 indexed orderId, address indexed seller, uint256 amount);
@@ -133,8 +130,6 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     mapping(address => uint256) public sellerBalances;
     mapping(address => uint256) public userBalances;
     mapping(address => uint256) public pendingWithdrawals;
-    // mapping(uint256 => Review[]) public productReviews;
-    // mapping(address => Review[]) public userReviews;
     mapping(uint256 => Escrow) public escrows; // Map orderId to escrow
 
     // struct Dispute {
