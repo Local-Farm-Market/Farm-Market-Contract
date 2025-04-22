@@ -345,6 +345,7 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         }
     }
 
+
     //Function to update cart item quantity
     function updateCartItemQuantity(uint256 productId, uint256 newQuantity) external {
         require(products[productId].id == productId, "Product does not exist");
@@ -593,43 +594,6 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         emit EscrowClaimed(orderId, order.seller, escrow.sellerAmount);
     }
 
-    //Function to release escrow
-    // function releaseEscrow(uint256 orderId) public nonReentrant orderExists(orderId) {
-    //     Order storage order = orders[orderId];
-    //     Escrow storage escrow = escrows[orderId];
-        
-    //     // Check escrow can be released
-    //     require(!escrow.isReleased && !escrow.isRefunded, "Escrow already processed");
-    //     require(
-    //         msg.sender == order.buyer || 
-    //         msg.sender == owner() || 
-    //         (order.status == OrderStatus.COMPLETED && msg.sender == order.seller),
-    //         "Unauthorized to release escrow"
-    //     );
-
-    //     escrow.isReleased = true;
-    //     escrow.releasedAt = block.timestamp;
-
-    //     // Pay seller
-    //     (bool sellerSuccess,) = payable(order.seller).call{value: escrow.sellerAmount}("");
-    //     require(sellerSuccess, "Seller payment failed");
-
-    //     // Pay developer fee
-    //     (bool devSuccess,) = payable(_developerWallet).call{value: escrow.developerFee}("");
-    //     require(devSuccess, "Developer fee payment failed");
-
-    //     _developerTotalFees += escrow.developerFee;
-
-    //     // Update status if needed
-    //     if (order.status != OrderStatus.COMPLETED) {
-    //         order.status = OrderStatus.COMPLETED;
-    //         order.updatedAt = block.timestamp;
-    //         emit OrderStatusUpdated(orderId, OrderStatus.COMPLETED);
-    //     }
-
-    //     emit EscrowReleased(orderId, order.seller, escrow.sellerAmount);
-    //     emit DeveloperFeePaid(orderId, escrow.developerFee);
-    // }
 
     // Function to refund buyer (cancel order)
     function refundEscrow(uint256 orderId) public nonReentrant orderExists(orderId) onlyAdmin {
