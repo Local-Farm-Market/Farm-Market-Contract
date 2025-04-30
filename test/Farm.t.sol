@@ -1119,14 +1119,14 @@ contract FarmEscrowTest is Test {
         // Update to COMPLETED as buyer
         vm.startPrank(buyer);
 
-        vm.expectEmit(true, false, false, false);
-        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.COMPLETED);
-
         vm.expectEmit(true, true, false, false);
         emit EscrowClaimable(1, seller, productTotal - (productTotal / 100));
 
         vm.expectEmit(true, false, false, false);
         emit DeveloperFeePaid(1, productTotal / 100);
+
+        vm.expectEmit(true, false, false, false);
+        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.COMPLETED);
 
         farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.COMPLETED);
 
