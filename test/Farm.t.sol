@@ -1,1092 +1,1724 @@
-// // SPDX-License-Identifier: MIT
-// pragma solidity ^0.8.20;
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.20;
 
-// import "forge-std/Test.sol";
-// import "../src/Farm.sol"; // Adjust path as needed
+import "forge-std/Test.sol";
+import "../src/Farm.sol";
 
-// contract FarmTest is Test {
-//     Farm farm;
-//     address owner;
-//     address developerWallet;
-//     address seller;
-//     address buyer;
-//     address anotherBuyer;
+contract FarmEscrowTest is Test {
+    FarmEscrow public farmEscrow;
 
-//     // Test product data
-//     string productName = "Organic Apples";
-//     string productCategory = "Fruits";
-//     uint256 productPrice = 1 ether;
-//     uint256 productStock = 100;
-//     string productUnit = "kg";
-//     string productDescription = "Fresh organic apples from local farms";
-//     string[] productImages;
-//     bool isOrganic = true;
-//     string harvestDate = "2023-05-15";
-//     Farm.NutritionFacts nutritionFacts;
+    // Test accounts
+    address public owner = address(1);
+    address public developerWallet = address(2);
+    address public seller = address(3);
+    address public buyer = address(4);
+    address public anotherBuyer = address(5);
+    address public anotherSeller = address(6);
 
-//     // Events to test
-//     event UserProfileCreated(address indexed user, string name, bool isSeller);
-//     event UserProfileUpdated(address indexed user);
-//     event ProductAdded(uint256 indexed productId, address indexed seller, string name);
-//     event ProductUpdated(uint256 indexed productId);
-//     event ProductDeleted(uint256 indexed productId);
-//     event OrderCreated(uint256 indexed orderId, address indexed buyer, address indexed seller);
-//     event OrderStatusUpdated(uint256 indexed orderId, Farm.OrderStatus status);
-//     event PaymentReleased(uint256 indexed orderId, uint256 amount);
-//     event WithdrawalMade(address indexed seller, uint256 amount);
-//     event ReviewSubmitted(uint256 indexed reviewId, address indexed reviewer, address indexed reviewee);
-//     event DisputeCreated(uint256 indexed orderId, address indexed initiator);
-//     event DisputeResolved(uint256 indexed orderId, Farm.DisputeResolution resolution);
+    // Test data
+    uint256 public constant INITIAL_BALANCE = 100 ether;
+    uint256 public constant PRODUCT_PRICE = 1 ether;
+    uint256 public constant PRODUCT_QUANTITY = 10;
+    uint256 public constant STANDARD_SHIPPING_FEE = 5 ether;
 
-//     function setUp() public {
-//         owner = address(this);
-//         developerWallet = makeAddr("developerWallet");
-//         seller = makeAddr("seller");
-//         buyer = makeAddr("buyer");
-//         anotherBuyer = makeAddr("anotherBuyer");
-        
-//         // Deploy contract
-//         farm = new Farm(developerWallet);
-        
-//         // Setup test data
-//         productImages = new string[](2);
-//         productImages[0] = "https://example.com/apple1.jpg";
-//         productImages[1] = "https://example.com/apple2.jpg";
-        
-//         nutritionFacts = Farm.NutritionFacts({
-//             calories: 52,
-//             protein: "0.3g",
-//             carbs: "14g",
-//             fat: "0.2g",
-//             fiber: "2.4g"
-//         });
-        
-//         // Fund accounts
-//         vm.deal(buyer, 100 ether);
-//         vm.deal(anotherBuyer, 100 ether);
-//         vm.deal(seller, 10 ether);
-//     }
+    // Events to test - declare ALL events from the contract that we'll be testing
+    event UserProfileCreated(address indexed user, string name, bool isSeller, string farmName);
+    event UserProfileUpdated(address indexed user);
+    event ProductAdded(uint256 indexed productId, address indexed seller, string name);
+    event ProductUpdated(uint256 indexed productId);
+    event OrderCreated(uint256 indexed orderId, address indexed buyer, address indexed seller);
+    event OrderStatusUpdated(uint256 indexed orderId, FarmEscrow.OrderStatus status);
+    event EscrowCreated(uint256 indexed orderId, uint256 amount, uint256 developerFee);
+    event EscrowClaimable(uint256 indexed orderId, address indexed seller, uint256 amount);
+    event EscrowClaimed(uint256 indexed orderId, address indexed seller, uint256 amount);
+    event CartItemAdded(address indexed user, uint256 productId, uint256 quantity);
+    event CartItemRemoved(address indexed user, uint256 productId);
+    event CartItemQuantityUpdated(address indexed user, uint256 productId, uint256 quantity);
+    event CartCleared(address indexed user);
+    event DeveloperFeePaid(uint256 indexed orderId, uint256 amount);
+    event EscrowRefunded(uint256 indexed orderId, address indexed buyer, uint256 amount);
+    event PaymentReleased(uint256 indexed orderId, uint256 amount);
+    event WithdrawalMade(address indexed seller, uint256 amount);
+    event FundsDeposited(address indexed user, uint256 amount);
+    event EscrowReleased(uint256 indexed orderId, address indexed seller, uint256 amount);
+    event ProductDeleted(uint256 indexed productId);
 
-//     // ==================== User Profile Tests ====================
+    function setUp() public {
+        // Deploy contract with developer wallet
+        vm.prank(owner);
+        farmEscrow = new FarmEscrow(developerWallet);
 
-//     function testCreateUserProfile() public {
-//         string[] memory certifications = new string[](1);
-//         certifications[0] = "Organic Farming Certified";
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, true);
-//         emit UserProfileCreated(seller, "John Farmer", true);
-        
-//         farm.createUserProfile(
-//             "John Farmer", 
-//             "john@farm.com", 
-//             "California", 
-//             "Organic farmer since 2010", 
-//             true, 
-//             certifications
-//         );
-//         vm.stopPrank();
-        
-//         // Verify profile was created
-//         (
-//             string memory name,
-//             string memory contactInfo,
-//             string memory location,
-//             string memory bio,
-//             bool isVerified,
-//             uint256 rating,
-//             uint256 reviewCount,
-//             ,
-//             uint256 createdAt,
-//             bool isSeller
-//         ) = farm.getUserProfile(seller);
-        
-//         assertEq(name, "John Farmer");
-//         assertEq(contactInfo, "john@farm.com");
-//         assertEq(location, "California");
-//         assertEq(bio, "Organic farmer since 2010");
-//         assertEq(isVerified, false);
-//         assertEq(rating, 5); // Default rating
-//         assertEq(reviewCount, 0);
-//         assertGt(createdAt, 0);
-//         assertEq(isSeller, true);
-//     }
+        // Fund test accounts
+        vm.deal(seller, INITIAL_BALANCE);
+        vm.deal(buyer, INITIAL_BALANCE);
+        vm.deal(anotherBuyer, INITIAL_BALANCE);
+        vm.deal(anotherSeller, INITIAL_BALANCE);
 
-//     function testUpdateUserProfile() public {
-//         // First create a profile
-//         string[] memory certifications = new string[](1);
-//         certifications[0] = "Organic Farming Certified";
-        
-//         vm.startPrank(seller);
-//         farm.createUserProfile(
-//             "John Farmer", 
-//             "john@farm.com", 
-//             "California", 
-//             "Organic farmer since 2010", 
-//             true, 
-//             certifications
-//         );
-        
-//         // Now update it
-//         string[] memory newCertifications = new string[](2);
-//         newCertifications[0] = "Organic Farming Certified";
-//         newCertifications[1] = "Sustainable Agriculture";
-        
-//         vm.expectEmit(true, false, false, false);
-//         emit UserProfileUpdated(seller);
-        
-//         farm.updateUserProfile(
-//             "John Smith", 
-//             "john.smith@farm.com", 
-//             "New York", 
-//             "Updated bio", 
-//             newCertifications
-//         );
-//         vm.stopPrank();
-        
-//         // Verify profile was updated
-//         (
-//             string memory name,
-//             string memory contactInfo,
-//             string memory location,
-//             string memory bio,
-//             ,,,
-//             string[] memory updatedCerts,
-//             ,
-//         ) = farm.getUserProfile(seller);
-        
-//         assertEq(name, "John Smith");
-//         assertEq(contactInfo, "john.smith@farm.com");
-//         assertEq(location, "New York");
-//         assertEq(bio, "Updated bio");
-//         assertEq(updatedCerts.length, 2);
-//         assertEq(updatedCerts[1], "Sustainable Agriculture");
-//     }
+        // Create seller profile
+        vm.startPrank(seller);
+        farmEscrow.createUserProfile(
+            "Farmer John",
+            "john@example.com",
+            "Farm County",
+            "Organic farmer since 2010",
+            true,
+            "John's Organic Farm",
+            "We grow the best organic produce"
+        );
+        vm.stopPrank();
 
-//     function testToggleSellerStatus() public {
-//         // First create a profile
-//         string[] memory certifications = new string[](0);
-        
-//         vm.startPrank(buyer);
-//         farm.createUserProfile(
-//             "Alice Buyer", 
-//             "alice@example.com", 
-//             "Texas", 
-//             "Regular buyer", 
-//             false, 
-//             certifications
-//         );
-        
-//         // Verify initial status
-//         (,,,,,,,,,bool isSeller) = farm.getUserProfile(buyer);
-//         assertEq(isSeller, false);
-        
-//         // Toggle status
-//         vm.expectEmit(true, false, false, false);
-//         emit UserProfileUpdated(buyer);
-//         farm.toggleSellerStatus();
-//         vm.stopPrank();
-        
-//         // Verify status changed
-//         (,,,,,,,,,bool isSellerAfterToggle) = farm.getUserProfile(buyer);
-//         assertEq(isSellerAfterToggle, true);
-//     }
+        // Create buyer profile
+        vm.startPrank(buyer);
+        farmEscrow.createUserProfile(
+            "Consumer Alice", "alice@example.com", "City Center", "Health enthusiast", false, "", ""
+        );
+        vm.stopPrank();
 
-//     // ==================== Product Management Tests ====================
+        // Create another seller profile
+        vm.startPrank(anotherSeller);
+        farmEscrow.createUserProfile(
+            "Farmer Jane",
+            "jane@example.com",
+            "Countryside",
+            "Family farm since 1950",
+            true,
+            "Jane's Family Farm",
+            "Traditional farming methods"
+        );
+        vm.stopPrank();
 
-//     function testAddProduct() public {
-//         // Setup seller profile
-//         setupSellerProfile();
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, true, false, true);
-//         emit ProductAdded(1, seller, productName);
-        
-//         farm.addProduct(
-//             productName,
-//             productCategory,
-//             productPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-        
-//         // Get products using the getter function
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts.length, 1);
-//         assertEq(sellerProducts[0].id, 1);
-//         assertEq(sellerProducts[0].name, productName);
-//         assertEq(sellerProducts[0].price, productPrice);
-//         assertEq(sellerProducts[0].stockQuantity, productStock);
-//         assertEq(sellerProducts[0].isOrganic, isOrganic);
-//     }
+        // Create another buyer profile
+        vm.startPrank(anotherBuyer);
+        farmEscrow.createUserProfile("Consumer Bob", "bob@example.com", "Suburb", "Cooking enthusiast", false, "", "");
+        vm.stopPrank();
+    }
 
-//     function testUpdateProduct() public {
-//         // Add a product first
-//         setupSellerWithProduct();
-        
-//         // Update product
-//         string memory newName = "Premium Organic Apples";
-//         uint256 newPrice = 1.5 ether;
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, false);
-//         emit ProductUpdated(1);
-        
-//         farm.updateProduct(
-//             1,
-//             newName,
-//             productCategory,
-//             newPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             true,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-        
-//         // Get updated product
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts[0].name, newName);
-//         assertEq(sellerProducts[0].price, newPrice);
-//     }
+    // ==================== User Profile Tests ====================
 
-//     function testUpdateProductStock() public {
-//         // Add a product first
-//         setupSellerWithProduct();
-        
-//         uint256 newStock = 50;
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, false);
-//         emit ProductUpdated(1);
-        
-//         farm.updateProductStock(1, newStock);
-//         vm.stopPrank();
-        
-//         // Get updated product
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts[0].stockQuantity, newStock);
-//     }
+    function testCreateUserProfile() public {
+        address newUser = address(7);
+        vm.deal(newUser, INITIAL_BALANCE);
 
-//     function testToggleProductAvailability() public {
-//         // Add a product first
-//         setupSellerWithProduct();
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, false);
-//         emit ProductUpdated(1);
-        
-//         farm.toggleProductAvailability(1);
-//         vm.stopPrank();
-        
-//         // Get updated product
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts[0].isAvailable, false);
-//     }
+        vm.startPrank(newUser);
 
-//     function testDeleteProduct() public {
-//         // Add a product first
-//         setupSellerWithProduct();
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, false);
-//         emit ProductDeleted(1);
-        
-//         farm.deleteProduct(1);
-//         vm.stopPrank();
-        
-//         // Check seller products
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts.length, 0);
-//     }
+        vm.expectEmit(true, false, false, true);
+        emit UserProfileCreated(newUser, "New Farmer", true, "New Farm");
 
-//     // ==================== Order Management Tests ====================
+        farmEscrow.createUserProfile(
+            "New Farmer", "new@example.com", "New Location", "New bio", true, "New Farm", "New farm description"
+        );
 
-//     function testCreateOrder() public {
-//         // Add a product first
-//         setupSellerWithProduct();
-        
-//         // Setup buyer profile
-//         setupBuyerProfile();
-        
-//         uint256[] memory productIds = new uint256[](1);
-//         productIds[0] = 1;
-        
-//         uint256[] memory quantities = new uint256[](1);
-//         quantities[0] = 5;
-        
-//         string memory shippingAddress = "123 Main St, Anytown, USA";
-        
-//         // Calculate total price (product price * quantity + shipping fee)
-//         uint256 totalPrice = (productPrice * quantities[0]) + 5 ether; // 5 ether is STANDARD_SHIPPING_FEE
-        
-//         vm.startPrank(buyer);
-//         vm.expectEmit(true, true, true, false);
-//         emit OrderCreated(1, buyer, seller);
-        
-//         farm.createOrder{value: totalPrice}(
-//             productIds,
-//             quantities,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-        
-//         // Get buyer orders
-//         Farm.Order[] memory buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(buyerOrders.length, 1);
-//         assertEq(buyerOrders[0].id, 1);
-//         assertEq(buyerOrders[0].buyer, buyer);
-//         assertEq(buyerOrders[0].seller, seller);
-//         assertEq(buyerOrders[0].totalPrice, totalPrice);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.PAYMENT_ESCROWED));
-        
-//         // Verify product stock was updated
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts[0].stockQuantity, productStock - quantities[0]);
-//         assertEq(sellerProducts[0].soldCount, quantities[0]);
-//     }
+        // Verify profile was created correctly
+        (
+            string memory name,
+            string memory contactInfo,
+            string memory location,
+            string memory bio,
+            bool isVerified,
+            uint256 rating,
+            uint256 reviewCount,
+            bool isSeller,
+            string memory farmName,
+            string memory farmDescription
+        ) = farmEscrow.userProfiles(newUser);
 
-//     function testUpdateOrderStatus() public {
-//         // Create an order first
-//         setupOrderWithPayment();
-        
-//         // Seller updates order to PROCESSING
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, true);
-//         emit OrderStatusUpdated(1, Farm.OrderStatus.PROCESSING);
-        
-//         farm.updateOrderStatus(1, Farm.OrderStatus.PROCESSING);
-//         vm.stopPrank();
-        
-//         // Get updated order
-//         Farm.Order[] memory buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.PROCESSING));
-        
-//         // Seller updates order to IN_DELIVERY
-//         vm.startPrank(seller);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.IN_DELIVERY);
-//         vm.stopPrank();
-        
-//         // Get updated order
-//         buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.IN_DELIVERY));
-        
-//         // Seller updates order to DELIVERED
-//         vm.startPrank(seller);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.DELIVERED);
-//         vm.stopPrank();
-        
-//         // Get updated order
-//         buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.DELIVERED));
-        
-//         // Buyer completes the order
-//         vm.startPrank(buyer);
-//         vm.expectEmit(true, false, false, true);
-//         emit OrderStatusUpdated(1, Farm.OrderStatus.COMPLETED);
-//         vm.expectEmit(true, false, false, false);
-//         emit PaymentReleased(1, buyerOrders[0].totalPrice);
-        
-//         farm.updateOrderStatus(1, Farm.OrderStatus.COMPLETED);
-//         vm.stopPrank();
-        
-//         // Get updated order
-//         buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.COMPLETED));
-//     }
+        assertEq(name, "New Farmer");
+        assertEq(contactInfo, "new@example.com");
+        assertEq(location, "New Location");
+        assertEq(bio, "New bio");
+        assertEq(isVerified, false);
+        assertEq(rating, 5); // Default rating
+        assertEq(reviewCount, 0);
+        assertEq(isSeller, true);
+        assertEq(farmName, "New Farm");
+        assertEq(farmDescription, "New farm description");
 
-//     function testAddTrackingInfo() public {
-//         // Create an order and update to PROCESSING
-//         setupOrderInProcessing();
-        
-//         string memory trackingInfo = "USPS123456789";
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, false);
-//         emit OrderStatusUpdated(1, Farm.OrderStatus.PROCESSING);
-        
-//         farm.addTrackingInfo(1, trackingInfo);
-//         vm.stopPrank();
-        
-//         // Get updated order
-//         Farm.Order[] memory buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(buyerOrders[0].trackingInfo, trackingInfo);
-//     }
+        vm.stopPrank();
+    }
 
-//     function testCreateDispute() public {
-//         // Create an order first
-//         setupOrderWithPayment();
-        
-//         string memory reason = "Product not as described";
-        
-//         vm.startPrank(buyer);
-//         vm.expectEmit(true, true, false, false);
-//         emit DisputeCreated(1, buyer);
-//         vm.expectEmit(true, false, false, true);
-//         emit OrderStatusUpdated(1, Farm.OrderStatus.DISPUTED);
-        
-//         farm.createDispute(1, reason);
-//         vm.stopPrank();
-        
-//         // Get updated order
-//         Farm.Order[] memory buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(buyerOrders[0].isDisputed, true);
-//         assertEq(buyerOrders[0].disputeReason, reason);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.DISPUTED));
-//     }
+    function testCreateUserProfileEmptyName() public {
+        address newUser = address(7);
+        vm.deal(newUser, INITIAL_BALANCE);
 
-//     function testResolveDisputeRefundBuyer() public {
-//         // Create a dispute first
-//         setupDisputedOrder();
-        
-//         uint256 buyerBalanceBefore = buyer.balance;
-        
-//         vm.expectEmit(true, false, false, true);
-//         emit DisputeResolved(1, Farm.DisputeResolution.REFUND_BUYER);
-//         vm.expectEmit(true, false, false, true);
-//         emit OrderStatusUpdated(1, Farm.OrderStatus.CANCELLED);
-        
-//         farm.resolveDispute(1, Farm.DisputeResolution.REFUND_BUYER);
-        
-//         // Get updated order
-//         Farm.Order[] memory buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.CANCELLED));
-        
-//         // Verify buyer was refunded (minus developer fee)
-//         uint256 buyerBalanceAfter = buyer.balance;
-//         uint256 expectedRefund = buyerOrders[0].totalPrice - (buyerOrders[0].totalPrice * 1 / 100); // 1% developer fee
-//         assertEq(buyerBalanceAfter, buyerBalanceBefore + expectedRefund);
-//     }
+        vm.startPrank(newUser);
 
-//     function testResolveDisputeReleaseToSeller() public {
-//         // Create a dispute first
-//         setupDisputedOrder();
-        
-//         uint256 sellerPendingBefore = farm.pendingWithdrawals(seller);
-        
-//         vm.expectEmit(true, false, false, true);
-//         emit DisputeResolved(1, Farm.DisputeResolution.RELEASE_TO_SELLER);
-//         vm.expectEmit(true, false, false, true);
-//         emit OrderStatusUpdated(1, Farm.OrderStatus.COMPLETED);
-        
-//         farm.resolveDispute(1, Farm.DisputeResolution.RELEASE_TO_SELLER);
-        
-//         // Get updated order
-//         Farm.Order[] memory buyerOrders = farm.getBuyerOrders(buyer);
-//         assertEq(uint(buyerOrders[0].status), uint(Farm.OrderStatus.COMPLETED));
-        
-//         // Verify seller's pending withdrawals remain the same (funds were already escrowed)
-//         uint256 sellerPendingAfter = farm.pendingWithdrawals(seller);
-//         assertEq(sellerPendingAfter, sellerPendingBefore);
-//     }
+        vm.expectRevert("Name cannot be empty");
 
-//     function testWithdrawFunds() public {
-//         // Create and complete an order first
-//         setupCompletedOrder();
-        
-//         uint256 sellerBalanceBefore = seller.balance;
-//         uint256 pendingAmount = farm.pendingWithdrawals(seller);
-        
-//         vm.startPrank(seller);
-//         vm.expectEmit(true, false, false, false);
-//         emit WithdrawalMade(seller, pendingAmount);
-        
-//         farm.withdrawFunds();
-//         vm.stopPrank();
-        
-//         // Verify funds were withdrawn
-//         uint256 sellerBalanceAfter = seller.balance;
-//         assertEq(sellerBalanceAfter, sellerBalanceBefore + pendingAmount);
-//         assertEq(farm.pendingWithdrawals(seller), 0);
-//         assertEq(farm.sellerBalances(seller), pendingAmount);
-//     }
+        farmEscrow.createUserProfile(
+            "", "new@example.com", "New Location", "New bio", true, "New Farm", "New farm description"
+        );
 
-//     // ==================== Review System Tests ====================
+        vm.stopPrank();
+    }
 
-//     function testSubmitReview() public {
-//         // Complete an order first
-//         setupCompletedOrder();
-        
-//         uint256 rating = 4;
-//         string memory comment = "Great product, fast shipping!";
-        
-//         vm.startPrank(buyer);
-//         vm.expectEmit(true, true, true, false);
-//         emit ReviewSubmitted(1, buyer, seller);
-        
-//         farm.submitReview(
-//             seller,
-//             1, // productId
-//             1, // orderId
-//             rating,
-//             comment
-//         );
-//         vm.stopPrank();
-        
-//         // Verify review was submitted
-//         Farm.Review[] memory productReviews = farm.getProductReviews(1);
-//         assertEq(productReviews.length, 1);
-//         assertEq(productReviews[0].reviewer, buyer);
-//         assertEq(productReviews[0].reviewee, seller);
-//         assertEq(productReviews[0].rating, rating);
-//         assertEq(productReviews[0].comment, comment);
-        
-//         // Verify seller's rating was updated
-//         (,,,,, uint256 sellerRating, uint256 reviewCount,,,) = farm.getUserProfile(seller);
-//         assertEq(sellerRating, rating);
-//         assertEq(reviewCount, 1);
-//     }
+    function testUpdateUserProfile() public {
+        vm.startPrank(seller);
 
-//     function testToggleFavoriteProduct() public {
-//         // Add a product first
-//         setupSellerWithProduct();
-//         setupBuyerProfile();
-        
-//         vm.startPrank(buyer);
-//         farm.toggleFavoriteProduct(1);
-//         vm.stopPrank();
-        
-//         // Verify product was added to favorites
-//         Farm.Product[] memory favorites = farm.getUserFavorites(buyer);
-//         assertEq(favorites.length, 1);
-//         assertEq(favorites[0].id, 1);
-        
-//         // Toggle again to remove from favorites
-//         vm.startPrank(buyer);
-//         farm.toggleFavoriteProduct(1);
-//         vm.stopPrank();
-        
-//         // Verify product was removed from favorites
-//         favorites = farm.getUserFavorites(buyer);
-//         assertEq(favorites.length, 0);
-//     }
+        vm.expectEmit(true, false, false, false);
+        emit UserProfileUpdated(seller);
 
-//     // ==================== Admin Functions Tests ====================
+        farmEscrow.updateUserProfile(
+            "Updated Farmer John",
+            "updated-john@example.com",
+            "Updated Farm County",
+            "Updated bio",
+            "Updated Farm Name",
+            "Updated farm description"
+        );
 
-//     function testPauseAndUnpause() public {
-//         // Pause the contract
-//         farm.pause();
-        
-//         // Try to add a product while paused (should revert)
-//         setupSellerProfile();
-        
-//         vm.startPrank(seller);
-//         vm.expectRevert("EnforcedPause()");
-//         farm.addProduct(
-//             productName,
-//             productCategory,
-//             productPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-        
-//         // Unpause the contract
-//         farm.unpause();
-        
-//         // Now adding a product should work
-//         vm.startPrank(seller);
-//         farm.addProduct(
-//             productName,
-//             productCategory,
-//             productPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-        
-//         // Verify product was added
-//         Farm.Product[] memory sellerProducts = farm.getSellerProducts(seller);
-//         assertEq(sellerProducts.length, 1);
-//         assertEq(sellerProducts[0].id, 1);
-//     }
+        // Verify profile was updated correctly
+        (
+            string memory name,
+            string memory contactInfo,
+            string memory location,
+            string memory bio,
+            ,
+            ,
+            ,
+            ,
+            string memory farmName,
+            string memory farmDescription
+        ) = farmEscrow.userProfiles(seller);
 
-//     function testSetDeveloperWallet() public {
-//         address newDeveloperWallet = makeAddr("newDeveloperWallet");
-        
-//         farm.setDeveloperWallet(newDeveloperWallet);
-        
-//         // Create an order to verify the new developer wallet receives fees
-//         setupSellerWithProduct();
-//         setupBuyerProfile();
-        
-//         uint256[] memory productIds = new uint256[](1);
-//         productIds[0] = 1;
-        
-//         uint256[] memory quantities = new uint256[](1);
-//         quantities[0] = 5;
-        
-//         string memory shippingAddress = "123 Main St, Anytown, USA";
-        
-//         uint256 totalPrice = (productPrice * quantities[0]) + 5 ether;
-        
-//         vm.startPrank(buyer);
-//         farm.createOrder{value: totalPrice}(
-//             productIds,
-//             quantities,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-        
-//         // Verify developer fee went to new wallet
-//         uint256 developerFee = (totalPrice * 1) / 100; // 1% fee
-//         assertEq(farm.pendingWithdrawals(newDeveloperWallet), developerFee);
-//     }
+        assertEq(name, "Updated Farmer John");
+        assertEq(contactInfo, "updated-john@example.com");
+        assertEq(location, "Updated Farm County");
+        assertEq(bio, "Updated bio");
+        assertEq(farmName, "Updated Farm Name");
+        assertEq(farmDescription, "Updated farm description");
 
-//     function testVerifyUser() public {
-//         // Create a user profile
-//         setupSellerProfile();
-        
-//         // Verify the user
-//         farm.verifyUser(seller);
-        
-//         // Check if user is verified
-//         (,,,,bool isVerified,,,,,) = farm.getUserProfile(seller);
-//         assertEq(isVerified, true);
-//     }
+        vm.stopPrank();
+    }
 
-//     // ==================== Getter Functions Tests ====================
+    function testUpdateNonExistentProfile() public {
+        address nonExistentUser = address(99);
+        vm.deal(nonExistentUser, INITIAL_BALANCE);
 
-//     function testGetSellerProducts() public {
-//         // Add multiple products
-//         setupSellerWithMultipleProducts();
-        
-//         // Get seller products
-//         Farm.Product[] memory products = farm.getSellerProducts(seller);
-        
-//         // Verify products
-//         assertEq(products.length, 2);
-//         assertEq(products[0].id, 1);
-//         assertEq(products[1].id, 2);
-//     }
+        vm.startPrank(nonExistentUser);
 
-//     function testGetAvailableProducts() public {
-//         // Add multiple products with different availability
-//         setupSellerWithMultipleProducts();
-        
-//         // Make one product unavailable
-//         vm.startPrank(seller);
-//         farm.toggleProductAvailability(1);
-//         vm.stopPrank();
-        
-//         // Get available products
-//         Farm.Product[] memory availableProducts = farm.getAvailableProducts();
-        
-//         // Verify only available products are returned
-//         assertEq(availableProducts.length, 1);
-//         assertEq(availableProducts[0].id, 2);
-//     }
+        vm.expectRevert("Profile does not exist");
 
-//     function testGetProductsByCategory() public {
-//         // Add products in different categories
-//         setupSellerWithMultipleCategories();
-        
-//         // Get products by category
-//         Farm.Product[] memory fruitProducts = farm.getProductsByCategory("Fruits");
-//         Farm.Product[] memory vegProducts = farm.getProductsByCategory("Vegetables");
-        
-//         // Verify products by category
-//         assertEq(fruitProducts.length, 1);
-//         assertEq(fruitProducts[0].id, 1);
-        
-//         assertEq(vegProducts.length, 1);
-//         assertEq(vegProducts[0].id, 2);
-//     }
+        farmEscrow.updateUserProfile("Name", "contact", "location", "bio", "farm", "description");
 
-//     function testGetBuyerOrders() public {
-//         // Create multiple orders
-//         setupMultipleOrders();
-        
-//         // Get buyer orders
-//         Farm.Order[] memory buyerOrdersList = farm.getBuyerOrders(buyer);
-        
-//         // Verify buyer orders
-//         assertEq(buyerOrdersList.length, 2);
-//         assertEq(buyerOrdersList[0].id, 1);
-//         assertEq(buyerOrdersList[1].id, 2);
-//     }
+        vm.stopPrank();
+    }
 
-//     function testGetSellerStats() public {
-//         // Complete an order
-//         setupCompletedOrder();
-        
-//         // Get seller stats
-//         (
-//             uint256 totalProducts,
-//             uint256 totalOrders,
-//             uint256 totalRevenue,
-//             uint256 availableBalance
-//         ) = farm.getSellerStats(seller);
-        
-//         // Verify stats
-//         assertEq(totalProducts, 1);
-//         assertEq(totalOrders, 1);
-//         assertGt(totalRevenue, 0);
-//         assertGt(availableBalance, 0);
-//     }
+    // ==================== Product Management Tests ====================
 
-//     function testGetBuyerStats() public {
-//         // Complete an order
-//         setupCompletedOrder();
-        
-//         // Get buyer stats
-//         (
-//             uint256 totalOrders,
-//             uint256 totalSpent,
-//             uint256 availableBalance
-//         ) = farm.getBuyerStats(buyer);
-        
-//         // Verify stats
-//         assertEq(totalOrders, 1);
-//         assertGt(totalSpent, 0);
-//         assertEq(availableBalance, 0);
-//     }
+    function testAddProduct() public {
+        vm.startPrank(seller);
 
-//     function testGetPlatformStats() public {
-//         // Create an order
-//         setupOrderWithPayment();
-        
-//         // Get platform stats
-//         (
-//             uint256 totalVolume,
-//             uint256 totalOrders,
-//             uint256 totalProducts
-//         ) = farm.getPlatformStats();
-        
-//         // Verify stats
-//         assertGt(totalVolume, 0);
-//         assertEq(totalOrders, 1);
-//         assertEq(totalProducts, 1);
-//     }
+        string[] memory testImageUrls = new string[](2);
+        testImageUrls[0] = "https://example.com/image1.jpg";
+        testImageUrls[1] = "https://example.com/image2.jpg";
 
-//     function testGetOrderCountByStatus() public {
-//         // Create orders with different statuses
-//         setupOrdersWithDifferentStatuses();
-        
-//         // Get order counts by status
-//         uint256 newOrdersCount = farm.getOrderCountByStatus(Farm.OrderStatus.PAYMENT_ESCROWED);
-//         uint256 processingOrdersCount = farm.getOrderCountByStatus(Farm.OrderStatus.PROCESSING);
-//         uint256 completedOrdersCount = farm.getOrderCountByStatus(Farm.OrderStatus.COMPLETED);
-        
-//         // Verify counts
-//         assertEq(newOrdersCount, 1);
-//         assertEq(processingOrdersCount, 1);
-//         assertEq(completedOrdersCount, 1);
-//     }
+        vm.expectEmit(true, true, false, true);
+        emit ProductAdded(1, seller, "Organic Apples");
 
-//     // ==================== Helper Functions ====================
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
 
-//     function setupSellerProfile() internal {
-//         string[] memory certifications = new string[](1);
-//         certifications[0] = "Organic Farming Certified";
-        
-//         vm.startPrank(seller);
-//         farm.createUserProfile(
-//             "John Farmer", 
-//             "john@farm.com", 
-//             "California", 
-//             "Organic farmer since 2010", 
-//             true, 
-//             certifications
-//         );
-//         vm.stopPrank();
-//     }
+        // Get product details and verify
+        FarmEscrow.Product memory product = getProductDetails(1);
 
-//     function setupBuyerProfile() internal {
-//         string[] memory certifications = new string[](0);
-        
-//         vm.startPrank(buyer);
-//         farm.createUserProfile(
-//             "Alice Buyer", 
-//             "alice@example.com", 
-//             "Texas", 
-//             "Regular buyer", 
-//             false, 
-//             certifications
-//         );
-//         vm.stopPrank();
-//     }
+        assertEq(product.id, 1);
+        assertEq(product.seller, seller);
+        assertEq(product.name, "Organic Apples");
+        assertEq(product.category, "Fruits");
+        assertEq(product.price, PRODUCT_PRICE);
+        assertEq(product.stockQuantity, PRODUCT_QUANTITY);
+        assertEq(product.unit, "kg");
+        assertEq(product.description, "Fresh organic apples");
+        assertEq(product.isAvailable, true);
+        assertEq(product.isOrganic, true);
+        assertEq(product.soldCount, 0);
 
-//     function setupSellerWithProduct() internal {
-//         setupSellerProfile();
-        
-//         vm.startPrank(seller);
-//         farm.addProduct(
-//             productName,
-//             productCategory,
-//             productPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-//     }
+        // Verify seller products mapping
+        uint256[] memory sellerProductIds = farmEscrow.getUserProducts(seller);
+        assertEq(sellerProductIds.length, 1);
+        assertEq(sellerProductIds[0], 1);
 
-//     function setupOrderWithPayment() internal {
-//         setupSellerWithProduct();
-//         setupBuyerProfile();
-        
-//         uint256[] memory productIds = new uint256[](1);
-//         productIds[0] = 1;
-        
-//         uint256[] memory quantities = new uint256[](1);
-//         quantities[0] = 5;
-        
-//         string memory shippingAddress = "123 Main St, Anytown, USA";
-        
-//         uint256 totalPrice = (productPrice * quantities[0]) + 5 ether;
-        
-//         vm.startPrank(buyer);
-//         farm.createOrder{value: totalPrice}(
-//             productIds,
-//             quantities,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-//     }
+        // Verify category mapping
+        uint256[] memory categoryProducts = farmEscrow.getProductsByCategory("Fruits");
+        assertEq(categoryProducts.length, 1);
+        assertEq(categoryProducts[0], 1);
 
-//     function setupOrderInProcessing() internal {
-//         setupOrderWithPayment();
-        
-//         vm.startPrank(seller);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.PROCESSING);
-//         vm.stopPrank();
-//     }
+        vm.stopPrank();
+    }
 
-//     function setupCompletedOrder() internal {
-//         setupOrderWithPayment();
-        
-//         vm.startPrank(seller);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.PROCESSING);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.IN_DELIVERY);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.DELIVERED);
-//         vm.stopPrank();
-        
-//         vm.startPrank(buyer);
-//         farm.updateOrderStatus(1, Farm.OrderStatus.COMPLETED);
-//         vm.stopPrank();
-//     }
+    function testAddProductNonSeller() public {
+        vm.startPrank(buyer);
 
-//     function setupDisputedOrder() internal {
-//         setupOrderWithPayment();
-        
-//         vm.startPrank(buyer);
-//         farm.createDispute(1, "Product not as described");
-//         vm.stopPrank();
-//     }
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
 
-//     function setupSellerWithMultipleProducts() internal {
-//         setupSellerProfile();
-        
-//         vm.startPrank(seller);
-//         // Add first product
-//         farm.addProduct(
-//             productName,
-//             productCategory,
-//             productPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-        
-//         // Add second product
-//         farm.addProduct(
-//             "Organic Oranges",
-//             productCategory,
-//             0.5 ether,
-//             200,
-//             productUnit,
-//             "Fresh organic oranges",
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-//     }
+        vm.expectRevert("Only sellers can perform this action");
 
-//     function setupSellerWithMultipleCategories() internal {
-//         setupSellerProfile();
-        
-//         vm.startPrank(seller);
-//         // Add fruit product
-//         farm.addProduct(
-//             productName,
-//             "Fruits",
-//             productPrice,
-//             productStock,
-//             productUnit,
-//             productDescription,
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-        
-//         // Add vegetable product
-//         farm.addProduct(
-//             "Organic Carrots",
-//             "Vegetables",
-//             0.5 ether,
-//             200,
-//             productUnit,
-//             "Fresh organic carrots",
-//             productImages,
-//             isOrganic,
-//             harvestDate,
-//             nutritionFacts
-//         );
-//         vm.stopPrank();
-//     }
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
 
-//     function setupMultipleOrders() internal {
-//         setupSellerWithMultipleProducts();
-//         setupBuyerProfile();
-        
-//         // First order
-//         uint256[] memory productIds1 = new uint256[](1);
-//         productIds1[0] = 1;
-        
-//         uint256[] memory quantities1 = new uint256[](1);
-//         quantities1[0] = 5;
-        
-//         string memory shippingAddress = "123 Main St, Anytown, USA";
-        
-//         uint256 totalPrice1 = (productPrice * quantities1[0]) + 5 ether;
-        
-//         vm.startPrank(buyer);
-//         farm.createOrder{value: totalPrice1}(
-//             productIds1,
-//             quantities1,
-//             shippingAddress
-//         );
-        
-//         // Second order
-//         uint256[] memory productIds2 = new uint256[](1);
-//         productIds2[0] = 2;
-        
-//         uint256[] memory quantities2 = new uint256[](1);
-//         quantities2[0] = 3;
-        
-//         uint256 totalPrice2 = (0.5 ether * quantities2[0]) + 5 ether;
-        
-//         farm.createOrder{value: totalPrice2}(
-//             productIds2,
-//             quantities2,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-//     }
+        vm.stopPrank();
+    }
 
-//     function setupOrdersWithDifferentStatuses() internal {
-//         setupSellerWithMultipleProducts();
-//         setupBuyerProfile();
-        
-//         // Order 1 - PAYMENT_ESCROWED
-//         uint256[] memory productIds1 = new uint256[](1);
-//         productIds1[0] = 1;
-        
-//         uint256[] memory quantities1 = new uint256[](1);
-//         quantities1[0] = 5;
-        
-//         string memory shippingAddress = "123 Main St, Anytown, USA";
-        
-//         uint256 totalPrice1 = (productPrice * quantities1[0]) + 5 ether;
-        
-//         vm.startPrank(buyer);
-//         farm.createOrder{value: totalPrice1}(
-//             productIds1,
-//             quantities1,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-        
-//         // Order 2 - PROCESSING
-//         uint256[] memory productIds2 = new uint256[](1);
-//         productIds2[0] = 2;
-        
-//         uint256[] memory quantities2 = new uint256[](1);
-//         quantities2[0] = 3;
-        
-//         uint256 totalPrice2 = (0.5 ether * quantities2[0]) + 5 ether;
-        
-//         vm.startPrank(buyer);
-//         farm.createOrder{value: totalPrice2}(
-//             productIds2,
-//             quantities2,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-        
-//         vm.startPrank(seller);
-//         farm.updateOrderStatus(2, Farm.OrderStatus.PROCESSING);
-//         vm.stopPrank();
-        
-//         // Order 3 - COMPLETED
-//         vm.deal(anotherBuyer, 100 ether);
-        
-//         string[] memory certifications = new string[](0);
-//         vm.startPrank(anotherBuyer);
-//         farm.createUserProfile(
-//             "Bob Buyer", 
-//             "bob@example.com", 
-//             "Florida", 
-//             "Another buyer", 
-//             false, 
-//             certifications
-//         );
-        
-//         uint256[] memory productIds3 = new uint256[](1);
-//         productIds3[0] = 1;
-        
-//         uint256[] memory quantities3 = new uint256[](1);
-//         quantities3[0] = 2;
-        
-//         uint256 totalPrice3 = (productPrice * quantities3[0]) + 5 ether;
-        
-//         farm.createOrder{value: totalPrice3}(
-//             productIds3,
-//             quantities3,
-//             shippingAddress
-//         );
-//         vm.stopPrank();
-        
-//         vm.startPrank(seller);
-//         farm.updateOrderStatus(3, Farm.OrderStatus.PROCESSING);
-//         farm.updateOrderStatus(3, Farm.OrderStatus.IN_DELIVERY);
-//         farm.updateOrderStatus(3, Farm.OrderStatus.DELIVERED);
-//         vm.stopPrank();
-        
-//         vm.startPrank(anotherBuyer);
-//         farm.updateOrderStatus(3, Farm.OrderStatus.COMPLETED);
-//         vm.stopPrank();
-//     }
-// }
+    function testAddProductEmptyName() public {
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        vm.expectRevert("Name cannot be empty");
+
+        farmEscrow.addProduct(
+            "", "Fruits", PRODUCT_PRICE, PRODUCT_QUANTITY, "kg", "Fresh organic apples", testImageUrls, true
+        );
+
+        vm.stopPrank();
+    }
+
+    function testAddProductZeroPrice() public {
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        vm.expectRevert("Price must be greater than zero");
+
+        farmEscrow.addProduct(
+            "Organic Apples", "Fruits", 0, PRODUCT_QUANTITY, "kg", "Fresh organic apples", testImageUrls, true
+        );
+
+        vm.stopPrank();
+    }
+
+    function testAddProductZeroQuantity() public {
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        vm.expectRevert("Stock quantity must be greater than zero");
+
+        farmEscrow.addProduct(
+            "Organic Apples", "Fruits", PRODUCT_PRICE, 0, "kg", "Fresh organic apples", testImageUrls, true
+        );
+
+        vm.stopPrank();
+    }
+
+    function testUpdateProduct() public {
+        // First add a product
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image1.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        // Now update the product
+        string[] memory updatedImageUrls = new string[](2);
+        updatedImageUrls[0] = "https://example.com/updated1.jpg";
+        updatedImageUrls[1] = "https://example.com/updated2.jpg";
+
+        vm.expectEmit(true, false, false, false);
+        emit ProductUpdated(1);
+
+        farmEscrow.updateProduct(
+            1,
+            "Updated Organic Apples",
+            "Updated Category",
+            PRODUCT_PRICE * 2,
+            PRODUCT_QUANTITY * 2,
+            "lb",
+            "Updated description",
+            updatedImageUrls,
+            true,
+            false
+        );
+
+        // Get product details and verify
+        FarmEscrow.Product memory product = getProductDetails(1);
+
+        assertEq(product.name, "Updated Organic Apples");
+        assertEq(product.category, "Updated Category");
+        assertEq(product.price, PRODUCT_PRICE * 2);
+        assertEq(product.stockQuantity, PRODUCT_QUANTITY * 2);
+        assertEq(product.unit, "lb");
+        assertEq(product.description, "Updated description");
+        assertEq(product.isAvailable, true);
+        assertEq(product.isOrganic, false);
+
+        // Verify category mapping was updated
+        uint256[] memory oldCategoryProducts = farmEscrow.getProductsByCategory("Fruits");
+        assertEq(oldCategoryProducts.length, 0);
+
+        uint256[] memory newCategoryProducts = farmEscrow.getProductsByCategory("Updated Category");
+        assertEq(newCategoryProducts.length, 1);
+        assertEq(newCategoryProducts[0], 1);
+
+        vm.stopPrank();
+    }
+
+    function testUpdateProductNonExistent() public {
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        vm.expectRevert("Product does not exist");
+
+        farmEscrow.updateProduct(
+            999, // Non-existent product ID
+            "Updated Product",
+            "Updated Category",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Updated description",
+            testImageUrls,
+            true,
+            true
+        );
+
+        vm.stopPrank();
+    }
+
+    function testUpdateProductNotSeller() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Try to update as another seller
+        vm.startPrank(anotherSeller);
+
+        vm.expectRevert("Only seller can update");
+
+        farmEscrow.updateProduct(
+            1,
+            "Updated Product",
+            "Updated Category",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Updated description",
+            testImageUrls,
+            true,
+            true
+        );
+
+        vm.stopPrank();
+    }
+
+    // ==================== Cart Management Tests ====================
+
+    function testAddToCart() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add product to cart as buyer
+        vm.startPrank(buyer);
+
+        vm.expectEmit(true, true, false, true);
+        emit CartItemAdded(buyer, 1, 2);
+
+        farmEscrow.addToCart(1, 2);
+
+        // Verify cart item was added
+        FarmEscrow.CartItem[] memory cartItems = farmEscrow.getCartItems();
+        assertEq(cartItems.length, 1);
+        assertEq(cartItems[0].productId, 1);
+        assertEq(cartItems[0].quantity, 2);
+
+        vm.stopPrank();
+    }
+
+    function testAddToCartNonExistentProduct() public {
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Product does not exist");
+
+        farmEscrow.addToCart(999, 1);
+
+        vm.stopPrank();
+    }
+
+    function testAddToCartInsufficientStock() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Try to add more than available stock
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Insufficient stock");
+
+        farmEscrow.addToCart(1, PRODUCT_QUANTITY + 1);
+
+        vm.stopPrank();
+    }
+
+    function testAddToCartZeroQuantity() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Try to add zero quantity
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Quantity must be greater than zero");
+
+        farmEscrow.addToCart(1, 0);
+
+        vm.stopPrank();
+    }
+
+    function testAddToCartExistingItem() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add product to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        // Add same product again
+        vm.expectEmit(true, true, false, true);
+        emit CartItemQuantityUpdated(buyer, 1, 5);
+
+        farmEscrow.addToCart(1, 3);
+
+        // Verify cart item was updated
+        FarmEscrow.CartItem[] memory cartItems = farmEscrow.getCartItems();
+        assertEq(cartItems.length, 1);
+        assertEq(cartItems[0].productId, 1);
+        assertEq(cartItems[0].quantity, 5);
+
+        vm.stopPrank();
+    }
+
+    function testUpdateCartItemQuantity() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add product to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        // Update quantity
+        vm.expectEmit(true, true, false, true);
+        emit CartItemQuantityUpdated(buyer, 1, 4);
+
+        farmEscrow.updateCartItemQuantity(1, 4);
+
+        // Verify cart item was updated
+        FarmEscrow.CartItem[] memory cartItems = farmEscrow.getCartItems();
+        assertEq(cartItems.length, 1);
+        assertEq(cartItems[0].productId, 1);
+        assertEq(cartItems[0].quantity, 4);
+
+        vm.stopPrank();
+    }
+
+    function testUpdateCartItemQuantityProductNotInCart() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Try to update quantity of product not in cart
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Product not in cart");
+
+        farmEscrow.updateCartItemQuantity(1, 4);
+
+        vm.stopPrank();
+    }
+
+    function testRemoveFromCart() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add product to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        // Remove from cart
+        vm.expectEmit(true, true, false, false);
+        emit CartItemRemoved(buyer, 1);
+
+        farmEscrow.removeFromCart(1);
+
+        // Verify cart is empty
+        FarmEscrow.CartItem[] memory cartItems = farmEscrow.getCartItems();
+        assertEq(cartItems.length, 0);
+
+        vm.stopPrank();
+    }
+
+    function testRemoveFromCartProductNotInCart() public {
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Product not in cart");
+
+        farmEscrow.removeFromCart(1);
+
+        vm.stopPrank();
+    }
+
+    function testClearCart() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        farmEscrow.addProduct(
+            "Organic Bananas",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic bananas",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add products to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+        farmEscrow.addToCart(2, 3);
+
+        // Clear cart
+        vm.expectEmit(true, false, false, false);
+        emit CartCleared(buyer);
+
+        farmEscrow.clearCart();
+
+        // Verify cart is empty
+        FarmEscrow.CartItem[] memory cartItems = farmEscrow.getCartItems();
+        assertEq(cartItems.length, 0);
+
+        vm.stopPrank();
+    }
+
+    function testGetCartTotal() public {
+        // First add products as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        farmEscrow.addProduct(
+            "Organic Bananas",
+            "Fruits",
+            PRODUCT_PRICE * 2,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic bananas",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add products to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2); // 2 * PRODUCT_PRICE
+        farmEscrow.addToCart(2, 3); // 3 * PRODUCT_PRICE * 2
+
+        // Get cart total
+        uint256 total = farmEscrow.getCartTotal();
+
+        // Verify total
+        uint256 expectedTotal = (2 * PRODUCT_PRICE) + (3 * PRODUCT_PRICE * 2);
+        assertEq(total, expectedTotal);
+
+        vm.stopPrank();
+    }
+
+    // ==================== Order Management Tests ====================
+
+    function testCreateOrderFromCart() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add product to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        // Calculate expected total
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        // Create order from cart
+        vm.expectEmit(true, true, true, false);
+        emit OrderCreated(1, buyer, seller);
+
+        vm.expectEmit(true, false, false, false);
+        emit EscrowCreated(1, productTotal, productTotal / 100); // 1% developer fee
+
+        vm.expectEmit(true, false, false, false);
+        emit CartCleared(buyer);
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        // Verify order was created
+        (
+            uint256 id,
+            address orderBuyer,
+            address orderSeller,
+            uint256[] memory productIds,
+            uint256[] memory quantities,
+            uint256 totalPrice,
+            uint256 shippingFee,
+            FarmEscrow.OrderStatus status,
+            string memory shippingAddress,
+            string memory trackingInfo
+        ) = farmEscrow.getOrderDetails(1);
+
+        assertEq(id, 1);
+        assertEq(orderBuyer, buyer);
+        assertEq(orderSeller, seller);
+        assertEq(productIds.length, 1);
+        assertEq(productIds[0], 1);
+        assertEq(quantities.length, 1);
+        assertEq(quantities[0], 2);
+        assertEq(totalPrice, productTotal);
+        assertEq(shippingFee, STANDARD_SHIPPING_FEE);
+        assertEq(uint256(status), uint256(FarmEscrow.OrderStatus.PAID));
+        assertEq(shippingAddress, "123 Buyer Street, City");
+        assertEq(trackingInfo, "");
+
+        // Verify escrow was created
+        (
+            uint256 amount,
+            uint256 developerFee,
+            uint256 sellerAmount,
+            bool isReleased,
+            bool isRefunded,
+            bool isClaimable,
+            bool isClaimed,
+            uint256 releasedAt
+        ) = farmEscrow.getEscrowDetails(1);
+
+        assertEq(amount, productTotal);
+        assertEq(developerFee, productTotal / 100); // 1% developer fee
+        assertEq(sellerAmount, productTotal - (productTotal / 100));
+        assertEq(isReleased, false);
+        assertEq(isRefunded, false);
+        assertEq(isClaimable, false);
+        assertEq(isClaimed, false);
+        assertEq(releasedAt, 0);
+
+        // Verify product stock was updated
+        FarmEscrow.Product memory product = getProductDetails(1);
+
+        assertEq(product.stockQuantity, PRODUCT_QUANTITY - 2);
+        assertEq(product.soldCount, 2);
+
+        // Verify cart is empty
+        FarmEscrow.CartItem[] memory cartItems = farmEscrow.getCartItems();
+        assertEq(cartItems.length, 0);
+
+        vm.stopPrank();
+    }
+
+    function testCreateOrderFromEmptyCart() public {
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Cart is empty");
+
+        farmEscrow.createOrderFromCart{value: STANDARD_SHIPPING_FEE}("123 Buyer Street, City");
+
+        vm.stopPrank();
+    }
+
+    function testCreateOrderFromCartIncorrectPayment() public {
+        // First add a product as seller
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        // Add product to cart as buyer
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        // Try to create order with incorrect payment
+        vm.expectRevert("Incorrect payment");
+
+        farmEscrow.createOrderFromCart{value: PRODUCT_PRICE}("123 Buyer Street, City");
+
+        vm.stopPrank();
+    }
+
+    function testAddShippingInfo() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Add shipping info as seller
+        vm.startPrank(seller);
+
+        vm.expectEmit(true, false, false, false);
+        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.SHIPPED);
+
+        farmEscrow.addShippingInfo(1, "Tracking123");
+
+        // Verify shipping info was added
+        (
+            , // id
+            , // buyer
+            , // seller
+            , // productIds
+            , // quantities
+            , // totalPrice
+            , // shippingFee
+            FarmEscrow.OrderStatus status,
+            , // shippingAddress
+            string memory trackingInfo
+        ) = farmEscrow.getOrderDetails(1);
+
+        assertEq(uint256(status), uint256(FarmEscrow.OrderStatus.SHIPPED));
+        assertEq(trackingInfo, "Tracking123");
+
+        vm.stopPrank();
+    }
+
+    function testAddShippingInfoNonSeller() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        // Try to add shipping info as buyer
+        vm.expectRevert("Only seller can update shipping info");
+
+        farmEscrow.addShippingInfo(1, "Tracking123");
+
+        vm.stopPrank();
+    }
+
+    function testUpdateOrderStatus() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Update order status as seller
+        vm.startPrank(seller);
+
+        // Add shipping info first
+        farmEscrow.addShippingInfo(1, "Tracking123");
+
+        // Update to IN_DELIVERY
+        vm.expectEmit(true, false, false, false);
+        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.IN_DELIVERY);
+
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.IN_DELIVERY);
+
+        // Verify status was updated
+        (,,,,,,, FarmEscrow.OrderStatus status,,) = farmEscrow.getOrderDetails(1);
+
+        assertEq(uint256(status), uint256(FarmEscrow.OrderStatus.IN_DELIVERY));
+
+        // Update to DELIVERED
+        vm.expectEmit(true, false, false, false);
+        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.DELIVERED);
+
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.DELIVERED);
+
+        // Verify status was updated
+        (,,,,,,, status,,) = farmEscrow.getOrderDetails(1);
+
+        assertEq(uint256(status), uint256(FarmEscrow.OrderStatus.DELIVERED));
+
+        vm.stopPrank();
+
+        // Update to COMPLETED as buyer
+        vm.startPrank(buyer);
+
+        vm.expectEmit(true, false, false, false);
+        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.COMPLETED);
+
+        vm.expectEmit(true, true, false, false);
+        emit EscrowClaimable(1, seller, productTotal - (productTotal / 100));
+
+        vm.expectEmit(true, false, false, false);
+        emit DeveloperFeePaid(1, productTotal / 100);
+
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.COMPLETED);
+
+        // Verify status was updated
+        (
+            , // id
+            , // buyer
+            , // seller
+            , // productIds
+            , // quantities
+            , // totalPrice
+            , // shippingFee
+            status,
+            , // shippingAddress
+                // trackingInfo
+        ) = farmEscrow.getOrderDetails(1);
+
+        assertEq(uint256(status), uint256(FarmEscrow.OrderStatus.COMPLETED));
+
+        // Verify escrow is claimable
+        (,,, bool isReleased, bool isRefunded, bool isClaimable, bool isClaimed,) = farmEscrow.getEscrowDetails(1);
+
+        assertEq(isReleased, false);
+        assertEq(isRefunded, false);
+        assertEq(isClaimable, true);
+        assertEq(isClaimed, false);
+
+        vm.stopPrank();
+    }
+
+    function testUpdateOrderStatusInvalidTransition() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        // Try to mark as COMPLETED directly
+        vm.expectRevert("Order must be delivered first");
+
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.COMPLETED);
+
+        vm.stopPrank();
+    }
+
+    // ==================== Escrow Management Tests ====================
+
+    function testClaimEscrow() public {
+        // First create an order and complete it
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Update order status to DELIVERED
+        vm.startPrank(seller);
+        farmEscrow.addShippingInfo(1, "Tracking123");
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.IN_DELIVERY);
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.DELIVERED);
+        vm.stopPrank();
+
+        // Mark as COMPLETED as buyer
+        vm.startPrank(buyer);
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.COMPLETED);
+        vm.stopPrank();
+
+        // Get seller balance before claim
+        uint256 sellerBalanceBefore = address(seller).balance;
+
+        // Claim escrow as seller
+        vm.startPrank(seller);
+
+        uint256 sellerAmount = productTotal - (productTotal / 100);
+
+        vm.expectEmit(true, true, false, false);
+        emit EscrowClaimed(1, seller, sellerAmount);
+
+        farmEscrow.claimEscrow(1);
+
+        // Verify escrow was claimed
+        (,,, bool isReleased, bool isRefunded, bool isClaimable, bool isClaimed, uint256 releasedAt) =
+            farmEscrow.getEscrowDetails(1);
+
+        assertEq(isReleased, true);
+        assertEq(isRefunded, false);
+        assertEq(isClaimable, true);
+        assertEq(isClaimed, true);
+        assertGt(releasedAt, 0);
+
+        // Verify seller received payment
+        uint256 sellerBalanceAfter = address(seller).balance;
+        assertEq(sellerBalanceAfter, sellerBalanceBefore + sellerAmount);
+
+        vm.stopPrank();
+    }
+
+    function testClaimEscrowNotClaimable() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Try to claim escrow before it's claimable
+        vm.startPrank(seller);
+
+        vm.expectRevert("Escrow not claimable or already claimed");
+
+        farmEscrow.claimEscrow(1);
+
+        vm.stopPrank();
+    }
+
+    function testClaimEscrowNonSeller() public {
+        // First create an order and complete it
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Update order status to DELIVERED
+        vm.startPrank(seller);
+        farmEscrow.addShippingInfo(1, "Tracking123");
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.IN_DELIVERY);
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.DELIVERED);
+        vm.stopPrank();
+
+        // Mark as COMPLETED as buyer
+        vm.startPrank(buyer);
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.COMPLETED);
+
+        // Try to claim escrow as buyer
+        vm.expectRevert("Only seller can claim escrow");
+
+        farmEscrow.claimEscrow(1);
+
+        vm.stopPrank();
+    }
+
+    function testRefundEscrow() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Get buyer balance before refund
+        uint256 buyerBalanceBefore = address(buyer).balance;
+
+        // Refund escrow as admin
+        vm.startPrank(owner);
+
+        vm.expectEmit(true, true, false, false);
+        emit EscrowRefunded(1, buyer, totalWithShipping);
+
+        farmEscrow.refundEscrow(1);
+
+        // Verify escrow was refunded
+        (,,, bool isReleased, bool isRefunded, bool isClaimable, bool isClaimed, uint256 releasedAt) =
+            farmEscrow.getEscrowDetails(1);
+
+        assertEq(isReleased, false);
+        assertEq(isRefunded, true);
+        assertEq(isClaimable, false);
+        assertEq(isClaimed, false);
+        assertGt(releasedAt, 0);
+
+        // Verify buyer received refund
+        uint256 buyerBalanceAfter = address(buyer).balance;
+        assertEq(buyerBalanceAfter, buyerBalanceBefore + totalWithShipping);
+
+        // Verify product stock was restored
+        FarmEscrow.Product memory product = getProductDetails(1);
+
+        assertEq(product.stockQuantity, PRODUCT_QUANTITY);
+        assertEq(product.soldCount, 0);
+
+        vm.stopPrank();
+    }
+
+    function testRefundEscrowNonAdmin() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        // Try to refund escrow as buyer
+        vm.expectRevert("Only admin can perform this action");
+
+        farmEscrow.refundEscrow(1);
+
+        vm.stopPrank();
+    }
+
+    function testAutoNotifyEscrowClaimable() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Update order status to DELIVERED
+        vm.startPrank(seller);
+        farmEscrow.addShippingInfo(1, "Tracking123");
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.IN_DELIVERY);
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.DELIVERED);
+        vm.stopPrank();
+
+        // Fast forward 14 days
+        vm.warp(block.timestamp + 14 days + 1);
+
+        // Auto notify escrow claimable
+        vm.startPrank(buyer);
+
+        vm.expectEmit(true, true, false, false);
+        emit EscrowClaimable(1, seller, productTotal - (productTotal / 100));
+
+        vm.expectEmit(true, false, false, false);
+        emit DeveloperFeePaid(1, productTotal / 100);
+
+        vm.expectEmit(true, false, false, false);
+        emit OrderStatusUpdated(1, FarmEscrow.OrderStatus.COMPLETED);
+
+        farmEscrow.autoNotifyEscrowClaimable(1);
+
+        // Verify escrow is claimable
+        (,,, bool isReleased, bool isRefunded, bool isClaimable, bool isClaimed,) = farmEscrow.getEscrowDetails(1);
+
+        assertEq(isReleased, false);
+        assertEq(isRefunded, false);
+        assertEq(isClaimable, true);
+        assertEq(isClaimed, false);
+
+        // Verify order status is COMPLETED
+        (,,,,,,, FarmEscrow.OrderStatus status,,) = farmEscrow.getOrderDetails(1);
+
+        assertEq(uint256(status), uint256(FarmEscrow.OrderStatus.COMPLETED));
+
+        vm.stopPrank();
+    }
+
+    function testAutoNotifyEscrowClaimableTooEarly() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Update order status to DELIVERED
+        vm.startPrank(seller);
+        farmEscrow.addShippingInfo(1, "Tracking123");
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.IN_DELIVERY);
+        farmEscrow.updateOrderStatus(1, FarmEscrow.OrderStatus.DELIVERED);
+        vm.stopPrank();
+
+        // Fast forward only 7 days (not enough time)
+        vm.warp(block.timestamp + 7 days);
+
+        // Try to auto notify escrow claimable
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Auto-notification time not reached");
+
+        farmEscrow.autoNotifyEscrowClaimable(1);
+
+        vm.stopPrank();
+    }
+
+    // ==================== Platform Stats Tests ====================
+
+    function testGetPlatformStats() public {
+        // First create an order
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Get platform stats
+        (uint256 totalVolume, uint256 totalOrders, uint256 developerFees, uint256 activeProducts, uint256 activeUsers) =
+            farmEscrow.getPlatformStats();
+
+        assertEq(totalVolume, productTotal);
+        assertEq(totalOrders, 1);
+        assertEq(developerFees, 0); // Developer fees are only collected when escrow is claimed
+        assertEq(activeProducts, 1);
+        // activeUsers is a simplified placeholder in the contract
+    }
+
+    // ==================== Emergency Functions Tests ====================
+
+    function testEmergencyWithdraw() public {
+        // First create an order to have funds in the contract
+        vm.startPrank(seller);
+
+        string[] memory testImageUrls = new string[](1);
+        testImageUrls[0] = "https://example.com/image.jpg";
+
+        farmEscrow.addProduct(
+            "Organic Apples",
+            "Fruits",
+            PRODUCT_PRICE,
+            PRODUCT_QUANTITY,
+            "kg",
+            "Fresh organic apples",
+            testImageUrls,
+            true
+        );
+
+        vm.stopPrank();
+
+        vm.startPrank(buyer);
+
+        farmEscrow.addToCart(1, 2);
+
+        uint256 productTotal = 2 * PRODUCT_PRICE;
+        uint256 totalWithShipping = productTotal + STANDARD_SHIPPING_FEE;
+
+        farmEscrow.createOrderFromCart{value: totalWithShipping}("123 Buyer Street, City");
+
+        vm.stopPrank();
+
+        // Get owner balance before withdraw
+        uint256 ownerBalanceBefore = address(owner).balance;
+
+        // Emergency withdraw as owner
+        vm.startPrank(owner);
+
+        farmEscrow.emergencyWithdraw();
+
+        // Verify owner received funds
+        uint256 ownerBalanceAfter = address(owner).balance;
+        assertEq(ownerBalanceAfter, ownerBalanceBefore + totalWithShipping);
+
+        vm.stopPrank();
+    }
+
+    function testEmergencyWithdrawNonAdmin() public {
+        vm.startPrank(buyer);
+
+        vm.expectRevert("Only admin can perform this action");
+
+        farmEscrow.emergencyWithdraw();
+
+        vm.stopPrank();
+    }
+
+    // Helper function to get product details
+    function getProductDetails(uint256 productId) internal view returns (FarmEscrow.Product memory) {
+        FarmEscrow.Product memory product;
+        // (
+        //     uint256 id,
+        //     address productSeller,
+        //     string memory name,
+        //     string memory category,
+        //     uint256 price,
+        //     uint256 stockQuantity,
+        //     string memory unit,
+        //     string memory description,
+        //     string[] memory imageUrls,
+        //     bool isAvailable,
+        //     bool isOrganic,
+        //     uint256 soldCount
+        // ) = farmEscrow.products(productId);
+
+        // FarmEscrow.Product memory product;
+        // product.id = id;
+        // product.seller = productSeller;
+        // product.name = name;
+        // product.category = category;
+        // product.price = price;
+        // product.stockQuantity = stockQuantity;
+        // product.unit = unit;
+        // product.description = description;
+        // product.imageUrls = imageUrls;
+        // product.isAvailable = isAvailable;
+        // product.isOrganic = isOrganic;
+        // product.soldCount = soldCount;
+
+        // return product;
+        return farmEscrow.getProduct(productId);
+    }
+}

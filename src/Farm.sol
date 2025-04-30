@@ -1,4 +1,4 @@
- // SPDX-License-Identifier: MIT
+    // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
@@ -64,8 +64,8 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         uint256 releasedAt;
         bool isReleased;
         bool isRefunded;
-        bool isClaimable;         // Added for the new escrow claim functionality (wether the funds is claimable)
-        bool isClaimed;           // Added to track if seller has claimed funds
+        bool isClaimable; // Added for the new escrow claim functionality (wether the funds is claimable)
+        bool isClaimed; // Added to track if seller has claimed funds
     }
 
     //Enums
@@ -74,7 +74,7 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         PAID,
         PROCESSING,
         SHIPPED,
-        IN_DELIVERY,              // Added new status to keep track if the status is in delivery
+        IN_DELIVERY, // Added new status to keep track if the status is in delivery
         DELIVERED,
         COMPLETED
     }
@@ -115,7 +115,7 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     mapping(string => uint256[]) public productsByCategory;
     mapping(address => mapping(uint256 => bool)) public favoriteProducts;
     mapping(address => uint256[]) public userFavorites;
-    mapping(address => CartItem[]) public userCarts; // Added to track user carts 
+    mapping(address => CartItem[]) public userCarts; // Added to track user carts
 
     // Replace Counters with native uint256 tracking
     uint256 private _productIds;
@@ -204,7 +204,7 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
 
         emit UserProfileCreated(msg.sender, name, isSeller, farmName);
     }
-    
+
     // Function to update user profile
     function updateUserProfile(
         string memory name,
@@ -284,7 +284,6 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
 
         // If category changed, update the category mapping
         if (keccak256(bytes(product.category)) != keccak256(bytes(category))) {
-
             // Remove from old category
             uint256[] storage oldCategoryProducts = productsByCategory[product.category];
 
@@ -337,14 +336,10 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
 
         // If not found, add new item
         if (!found) {
-            cart.push(CartItem({
-                productId: productId,
-                quantity: quantity
-            }));
+            cart.push(CartItem({productId: productId, quantity: quantity}));
             emit CartItemAdded(msg.sender, productId, quantity);
         }
     }
-
 
     //Function to update cart item quantity
     function updateCartItemQuantity(uint256 productId, uint256 newQuantity) external {
@@ -399,10 +394,9 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         emit CartCleared(msg.sender);
     }
 
-
     //******************* Cart getter functions  ****************/
 
-    //Function to get all cart items 
+    //Function to get all cart items
     function getCartItems() external view returns (CartItem[] memory) {
         return userCarts[msg.sender];
     }
@@ -410,16 +404,16 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     //Function to get the card total
     function getCartTotal() external view returns (uint256 total) {
         CartItem[] storage cart = userCarts[msg.sender];
-        
+
         for (uint256 i = 0; i < cart.length; i++) {
             uint256 productId = cart[i].productId;
             uint256 quantity = cart[i].quantity;
-            
+
             if (products[productId].id == productId && products[productId].isAvailable) {
                 total += products[productId].price * quantity;
             }
         }
-        
+
         return total;
     }
 
@@ -427,41 +421,41 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     function createOrderFromCart(string memory shippingAddress) external payable {
         CartItem[] storage cart = userCarts[msg.sender];
         require(cart.length > 0, "Cart is empty");
-        
+
         uint256 totalAmount = 0;
         uint256[] memory productIds = new uint256[](cart.length);
         uint256[] memory quantities = new uint256[](cart.length);
         address seller;
-        
+
         // Validate all products and calculate total
         for (uint256 i = 0; i < cart.length; i++) {
             uint256 productId = cart[i].productId;
             uint256 quantity = cart[i].quantity;
-            
+
             require(products[productId].id == productId, "Product does not exist");
             require(products[productId].isAvailable, "Product not available");
             require(products[productId].stockQuantity >= quantity, "Insufficient stock");
-            
+
             // For simplicity, we're assuming all products are from the same seller
             if (i == 0) {
                 seller = products[productId].seller;
             } else {
                 require(seller == products[productId].seller, "All products must be from the same seller");
             }
-            
+
             totalAmount += products[productId].price * quantity;
             productIds[i] = productId;
             quantities[i] = quantity;
         }
-        
+
         require(msg.value == totalAmount + STANDARD_SHIPPING_FEE, "Incorrect payment");
-        
+
         uint256 newOrderId = _incrementOrderId();
-        
+
         // Calculate fees
         uint256 developerFee = (totalAmount * DEVELOPER_FEE_PERCENT) / 100;
         uint256 sellerAmount = totalAmount - developerFee;
-        
+
         // Create order
         orders[newOrderId] = Order({
             id: newOrderId,
@@ -476,7 +470,7 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
             trackingInfo: "",
             updatedAt: block.timestamp
         });
-        
+
         // Create escrow to hold funds
         escrows[newOrderId] = Escrow({
             orderId: newOrderId,
@@ -490,36 +484,37 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
             isClaimable: false,
             isClaimed: false
         });
-        
+
         // Update product stock
         for (uint256 i = 0; i < productIds.length; i++) {
             Product storage product = products[productIds[i]];
             product.stockQuantity -= quantities[i];
             product.soldCount += quantities[i];
         }
-        
+
         // Track orders for buyer and seller
         buyerOrders[msg.sender].push(newOrderId);
         sellerOrders[seller].push(newOrderId);
-        
+
         // Update platform stats
         _platformTotalVolume += totalAmount;
         _platformTotalOrders++;
-        
+
         // Clear the cart
         delete userCarts[msg.sender];
-        
+
         emit OrderCreated(newOrderId, msg.sender, seller);
         emit EscrowCreated(newOrderId, totalAmount, developerFee);
         emit CartCleared(msg.sender);
     }
 
-
     // Function to update order shipping info (by seller)
     function addShippingInfo(uint256 orderId, string memory trackingInfo) external orderExists(orderId) {
         Order storage order = orders[orderId];
         require(msg.sender == order.seller, "Only seller can update shipping info");
-        require(order.status == OrderStatus.PAID || order.status == OrderStatus.PROCESSING, "Order not in correct state");
+        require(
+            order.status == OrderStatus.PAID || order.status == OrderStatus.PROCESSING, "Order not in correct state"
+        );
 
         order.trackingInfo = trackingInfo;
         order.status = OrderStatus.SHIPPED;
@@ -529,14 +524,18 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     }
 
     // Update order status function
-    function updateOrderStatus(uint256 orderId, OrderStatus newStatus) external onlyOrderParticipant(orderId) orderExists(orderId) {
+    function updateOrderStatus(uint256 orderId, OrderStatus newStatus)
+        external
+        onlyOrderParticipant(orderId)
+        orderExists(orderId)
+    {
         Order storage order = orders[orderId];
-        
+
         // Specific validation for order status transitions
         if (newStatus == OrderStatus.COMPLETED) {
             require(msg.sender == order.buyer, "Only buyer can mark as completed");
             require(order.status == OrderStatus.DELIVERED, "Order must be delivered first");
-            
+
             // Make escrow claimable when order is completed
             makeEscrowClaimable(orderId);
         } else if (newStatus == OrderStatus.DELIVERED) {
@@ -553,56 +552,55 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         emit OrderStatusUpdated(orderId, newStatus);
     }
 
-    //**************** Escrow Management Functions ***********************/ 
+    //**************** Escrow Management Functions ***********************/
 
     // Function to make escrow claimable and immediately send the developer fee
     function makeEscrowClaimable(uint256 orderId) internal orderExists(orderId) {
         Order storage order = orders[orderId];
         Escrow storage escrow = escrows[orderId];
-        
+
         // Check escrow can be made claimable
         require(!escrow.isReleased && !escrow.isRefunded && !escrow.isClaimable, "Escrow already processed");
-        
+
         escrow.isClaimable = true;
-        
+
         // Pay developer fee immediately
         (bool devSuccess,) = payable(_developerWallet).call{value: escrow.developerFee}("");
         require(devSuccess, "Developer fee payment failed");
-        
+
         _developerTotalFees += escrow.developerFee;
-        
+
         emit EscrowClaimable(orderId, order.seller, escrow.sellerAmount);
         emit DeveloperFeePaid(orderId, escrow.developerFee);
     }
 
-    // Function to allow sellers claim their funds from the escrow 
+    // Function to allow sellers claim their funds from the escrow
     function claimEscrow(uint256 orderId) external nonReentrant orderExists(orderId) {
         Order storage order = orders[orderId];
         Escrow storage escrow = escrows[orderId];
-        
+
         require(msg.sender == order.seller, "Only seller can claim escrow");
         require(escrow.isClaimable && !escrow.isClaimed, "Escrow not claimable or already claimed");
-        
+
         escrow.isClaimed = true;
         escrow.isReleased = true;
         escrow.releasedAt = block.timestamp;
-        
+
         // Pay seller
         (bool sellerSuccess,) = payable(order.seller).call{value: escrow.sellerAmount}("");
         require(sellerSuccess, "Seller payment failed");
-        
+
         emit EscrowClaimed(orderId, order.seller, escrow.sellerAmount);
     }
-
 
     // Function to refund buyer (cancel order)
     function refundEscrow(uint256 orderId) public nonReentrant orderExists(orderId) onlyAdmin {
         Order storage order = orders[orderId];
         Escrow storage escrow = escrows[orderId];
-        
+
         // Check escrow can be refunded
         require(!escrow.isReleased && !escrow.isRefunded, "Escrow already processed");
-        
+
         escrow.isRefunded = true;
         escrow.releasedAt = block.timestamp;
 
@@ -615,7 +613,7 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         for (uint256 i = 0; i < order.productIds.length; i++) {
             uint256 productId = order.productIds[i];
             uint256 quantity = order.quantities[i];
-            
+
             if (products[productId].id == productId) {
                 products[productId].stockQuantity += quantity;
                 products[productId].soldCount -= quantity;
@@ -629,36 +627,40 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     function autoNotifyEscrowClaimable(uint256 orderId) external orderExists(orderId) {
         Order storage order = orders[orderId];
         Escrow storage escrow = escrows[orderId];
-        
+
         require(order.status == OrderStatus.DELIVERED, "Order not delivered");
         require(!escrow.isReleased && !escrow.isRefunded && !escrow.isClaimable, "Escrow already processed");
         require(block.timestamp >= order.updatedAt + 14 days, "Auto-notification time not reached");
-        
+
         // Make escrow claimable
         makeEscrowClaimable(orderId);
-        
+
         // Update order status to completed
         order.status = OrderStatus.COMPLETED;
         order.updatedAt = block.timestamp;
-        
+
         emit OrderStatusUpdated(orderId, OrderStatus.COMPLETED);
     }
 
-    //**************** Additional getter functions for escrow status *******************/ 
+    //**************** Additional getter functions for escrow status *******************/
 
-    //Function to get all the details of a specific order 
-    function getOrderDetails(uint256 orderId) external view returns (
-        uint256 id,
-        address buyer,
-        address seller,
-        uint256[] memory productIds,
-        uint256[] memory quantities,
-        uint256 totalPrice,
-        uint256 shippingFee,
-        OrderStatus status,
-        string memory shippingAddress,
-        string memory trackingInfo
-    ) {
+    //Function to get all the details of a specific order
+    function getOrderDetails(uint256 orderId)
+        external
+        view
+        returns (
+            uint256 id,
+            address buyer,
+            address seller,
+            uint256[] memory productIds,
+            uint256[] memory quantities,
+            uint256 totalPrice,
+            uint256 shippingFee,
+            OrderStatus status,
+            string memory shippingAddress,
+            string memory trackingInfo
+        )
+    {
         Order storage order = orders[orderId];
         return (
             order.id,
@@ -674,16 +676,20 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         );
     }
 
-    function getEscrowDetails(uint256 orderId) external view returns (
-        uint256 amount,
-        uint256 developerFee,
-        uint256 sellerAmount,
-        bool isReleased,
-        bool isRefunded,
-        bool isClaimable,
-        bool isClaimed,
-        uint256 releasedAt
-    ) {
+    function getEscrowDetails(uint256 orderId)
+        external
+        view
+        returns (
+            uint256 amount,
+            uint256 developerFee,
+            uint256 sellerAmount,
+            bool isReleased,
+            bool isRefunded,
+            bool isClaimable,
+            bool isClaimed,
+            uint256 releasedAt
+        )
+    {
         Escrow storage escrow = escrows[orderId];
         return (
             escrow.amount,
@@ -697,8 +703,8 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
         );
     }
 
-    // Function to get user products 
-     function getUserProducts(address seller) external view returns (uint256[] memory) {
+    // Function to get user products
+    function getUserProducts(address seller) external view returns (uint256[] memory) {
         return sellerProducts[seller];
     }
 
@@ -718,31 +724,33 @@ contract FarmEscrow is Ownable, ReentrancyGuard {
     }
 
     // Platform statistics
-    function getPlatformStats() external view returns (
-        uint256 totalVolume,
-        uint256 totalOrders,
-        uint256 developerFees,
-        uint256 activeProducts,
-        uint256 activeUsers
-    ) {
+    function getPlatformStats()
+        external
+        view
+        returns (
+            uint256 totalVolume,
+            uint256 totalOrders,
+            uint256 developerFees,
+            uint256 activeProducts,
+            uint256 activeUsers
+        )
+    {
         uint256 productCount = 0;
         for (uint256 i = 1; i <= _productIds; i++) {
             if (products[i].isAvailable && products[i].stockQuantity > 0) {
                 productCount++;
             }
         }
-        
+
         // For active users, we'll count any address with a profile
         // A more sophisticated implementation could track active users within a time period
         uint256 userCount = 0; // This is a simplified placeholder
-        
-        return (
-            _platformTotalVolume,
-            _platformTotalOrders,
-            _developerTotalFees,
-            productCount,
-            userCount
-        );
+
+        return (_platformTotalVolume, _platformTotalOrders, _developerTotalFees, productCount, userCount);
+    }
+
+    function getProduct(uint256 productId) external view returns (Product memory) {
+        return products[productId];
     }
 
     // Emergency functions
